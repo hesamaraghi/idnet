@@ -11,15 +11,16 @@ Work accepted to 2024 IEEE International Conference on Robotics and Automation (
 If you use this code in an academic context, please cite our work:
 
 ```bibtex
-@InProceedings{Wu_2024_ICRA,
-    author    = {Wu, Yilun and Paredes-Vall\'es, Federico and de Croon, Guido C. H. E.},
-    title     = {Lightweight Event-based Optical Flow Estimation via Iterative Deblurring},
-    booktitle = {Proceedings of IEEE International Conference on Robotics and Automation (ICRA'24)},
-    month     = {May},
-    year      = {2024},
-    Note      = {To Appear}
-}
-
+@INPROCEEDINGS{10610353,
+  author={Wu, Yilun and Paredes-Vallés, Federico and de Croon, Guido C. H. E.},
+  booktitle={2024 IEEE International Conference on Robotics and Automation (ICRA)}, 
+  title={Lightweight Event-based Optical Flow Estimation via Iterative Deblurring}, 
+  year={2024},
+  volume={},
+  number={},
+  pages={14708-14715},
+  keywords={Image motion analysis;Correlation;Memory management;Estimation;Rendering (computer graphics);Real-time systems;Iterative algorithms},
+  doi={10.1109/ICRA57147.2024.10610353}}
 ```
 
 ## Dependency
