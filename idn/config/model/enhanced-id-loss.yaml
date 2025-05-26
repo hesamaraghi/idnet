@@ -1,0 +1,8 @@
+# Enhanced loss configuration that adds uncertainty-aware loss calculation
+final_prediction_nonseq:
+  loss_type: sparse_l1_uncertainty  # Modified loss that takes uncertainty into account
+  weight: 1.0
+  seq_weight: avg
+  seq_norm: false
+  uncertainty_weight: 0.1  # Weight for the uncertainty loss term
+

@@ -1,0 +1,7 @@
+defaults:
+  - enhanced-update-block
+
+hidden_dim: 128
+downsample: 8
+pretrain_ckpt: null  # No pretrained checkpoint initially
+

@@ -20,7 +20,7 @@ from torchvision import transforms as tf
 from torch.utils.data import Dataset, DataLoader
 from matplotlib import pyplot as plt, transforms
 from ..utils import transformers
-
+import hdf5plugin
 
 from ..utils.dsec_utils import RepresentationType, VoxelGrid, PolarityCount, flow_16bit_to_float
 from ..utils.transformers import (
@@ -89,7 +89,7 @@ class EventSlicer:
 
         events = dict()
         time_array_conservative = np.asarray(
-            self.events['t'][t_start_ms_idx:t_end_ms_idx])
+            self.events['t'][t_start_ms_idx:t_end_ms_idx], dtype=np.uint64)
         idx_start_offset, idx_end_offset = self.get_time_indices_offsets(
             time_array_conservative, t_start_us, t_end_us)
         t_start_us_idx = t_start_ms_idx + idx_start_offset

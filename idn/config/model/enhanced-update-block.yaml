@@ -1,0 +1,16 @@
+# Configuration for the enhanced update block architecture
+name: IDEDEQIDO  # Keep the same model name for compatibility
+deblur: true
+add_delta: true
+update_iters: 4
+zero_init: true
+deq_mode: false
+input_flowmap: true
+
+# Enhanced update block specific options
+update_block:
+  type: enhanced  # Options: 'lite' (original), 'enhanced' (new implementation)
+  use_attention: true  # Whether to use attention mechanism
+  with_uncertainty: false  # Whether to enable uncertainty estimation
+  multi_scale: true  # Whether to use multi-scale feature processing
+

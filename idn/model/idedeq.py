@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn.functional import unfold, grid_sample, interpolate
 
 from .extractor import LiteEncoder
-from .update import LiteUpdateBlock
+from .update import LiteUpdateBlock, EnhancedUpdateBlock
 
 from math import sqrt
 
@@ -18,10 +18,37 @@ class IDEDEQIDO(nn.Module):
         self.pred_next_flow = getattr(config, 'pred_next_flow', False)
         self.fnet = LiteEncoder(
             output_dim=self.input_dim//2, dropout=0, n_first_channels=2, stride=2 if self.downsample == 8 else 1)
-        self.update_net = LiteUpdateBlock(
-            hidden_dim=self.hidden_dim, input_dim=self.input_dim,
-            num_outputs=2 if self.pred_next_flow else 1,
-            downsample=self.downsample)
+            
+        # Get update block configuration
+        update_block_config = getattr(config, 'update_block', {})
+        update_block_type = getattr(update_block_config, 'type', 'lite')
+        
+        # Create the appropriate update block based on configuration
+        if update_block_type == 'enhanced':
+            # Enhanced update block with configurable features
+            use_attention = getattr(update_block_config, 'use_attention', True)
+            with_uncertainty = getattr(update_block_config, 'with_uncertainty', False)
+            
+            self.update_net = EnhancedUpdateBlock(
+                hidden_dim=self.hidden_dim, 
+                input_dim=self.input_dim,
+                num_outputs=2 if self.pred_next_flow else 1,
+                downsample=self.downsample,
+                with_uncertainty=with_uncertainty,
+                use_attention=use_attention)
+            
+            # Store uncertainty configuration for later use
+            self.with_uncertainty = with_uncertainty
+        else:
+            # Original LiteUpdateBlock for backward compatibility
+            self.update_net = LiteUpdateBlock(
+                hidden_dim=self.hidden_dim, 
+                input_dim=self.input_dim,
+                num_outputs=2 if self.pred_next_flow else 1,
+                downsample=self.downsample)
+            
+            # Set uncertainty to False for the original implementation
+            self.with_uncertainty = False
         self.deblur_iters = config.update_iters
         self.zero_init = config.zero_init
         self._deq = getattr(config, "deq_mode", False)
@@ -156,17 +183,41 @@ class IDEDEQIDO(nn.Module):
                 f = self.fnet(slice)
                 net = self.update_net(net, f)
 
-            dflow = self.update_net.compute_deltaflow(net)
+            # Compute delta flow, handling uncertainty when available
+            dflow_result = self.update_net.compute_deltaflow(net)
+            
+            # Handle uncertainty if enabled
+            if self.with_uncertainty and hasattr(self.update_net, 'get_flow_uncertainty'):
+                dflow = dflow_result  # Result is already the flow without uncertainty
+                # Store uncertainty for potential visualization or analysis
+                delta_flow_uncertainty = self.update_net.get_flow_uncertainty()
+            else:
+                dflow = dflow_result
+                delta_flow_uncertainty = None
+                
             up_mask = self.update_net.compute_up_mask(net)
             delta_flow = self.upsample_flow(dflow, up_mask)
             delta_flow_history = torch.cat(
                 [delta_flow_history, delta_flow.unsqueeze(1)], dim=1)
+                
             if self.pred_next_flow:
-                nflow = self.update_net.compute_nextflow(net)
+                # Compute next flow, handling uncertainty when available
+                nflow_result = self.update_net.compute_nextflow(net)
+                
+                # Handle uncertainty if enabled
+                if self.with_uncertainty and hasattr(self.update_net, 'get_nextflow_uncertainty'):
+                    nflow = nflow_result  # Result is already the flow without uncertainty
+                    # Store uncertainty for potential visualization or analysis
+                    next_flow_uncertainty = self.update_net.get_nextflow_uncertainty()
+                else:
+                    nflow = nflow_result
+                    next_flow_uncertainty = None
+                    
                 up_mask_next_flow = self.update_net.compute_up_mask2(net)
                 next_flow = self.upsample_flow(nflow, up_mask_next_flow)
             else:
                 next_flow = None
+                next_flow_uncertainty = None
 
             if self.deblur or self.add_delta:
                 flow_total = flow_total + delta_flow
@@ -184,12 +235,24 @@ class IDEDEQIDO(nn.Module):
                 self.flow_init = self.forward_flow(flow_total)
         if self.conr_mode:
             self.last_net_co = net
-        return {'final_prediction': flow_total,
-                'next_flow': next_flow,
-                'delta_flow': delta_flow_history,
-                'deblurred_event_volume_new': x_deblur_history,
-                'flow_history': flow_history,
-                'net': net}
+        # Prepare result dictionary with the standard outputs
+        result = {
+            'final_prediction': flow_total,
+            'next_flow': next_flow,
+            'delta_flow': delta_flow_history,
+            'deblurred_event_volume_new': x_deblur_history,
+            'flow_history': flow_history,
+            'net': net
+        }
+        
+        # Add uncertainty outputs if available
+        if self.with_uncertainty:
+            if 'delta_flow_uncertainty' in locals() and delta_flow_uncertainty is not None:
+                result['delta_flow_uncertainty'] = delta_flow_uncertainty
+            if 'next_flow_uncertainty' in locals() and next_flow_uncertainty is not None:
+                result['next_flow_uncertainty'] = next_flow_uncertainty
+                
+        return result
 
     def forward_flowmap(self, event_bins, flow_init=None, deblur_iters=None):
         deblur_iters = self.deblur_iters if deblur_iters is None else deblur_iters
@@ -216,7 +279,15 @@ class IDEDEQIDO(nn.Module):
                 f = self.fnet(slice)
                 net = self.update_net(net, f)
 
-            dflow = self.update_net.compute_deltaflow(net)
+            # Compute delta flow, handling uncertainty when available
+            dflow_result = self.update_net.compute_deltaflow(net)
+            
+            # Handle uncertainty if enabled
+            if self.with_uncertainty and hasattr(self.update_net, 'get_flow_uncertainty'):
+                dflow = dflow_result
+            else:
+                dflow = dflow_result
+                
             up_mask = self.update_net.compute_up_mask(net)
             delta_flow = self.upsample_flow(dflow, up_mask)
             flow_total = flow_total + delta_flow

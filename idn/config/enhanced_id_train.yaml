@@ -1,0 +1,70 @@
+# Enhanced ID training configuration with the enhanced update block
+# Extends the standard id_train.yaml configuration
+
+defaults:
+  - validation@_group_.nonrec: nonrec
+  - hydra: custom_hydra
+  - data_loader_base
+  - torch_environ_base
+  - model: enhanced-id-8x  # Use the enhanced update block model
+  - dataset: dsec_augmentation
+  - _self_
+
+# Standard training parameters (same as id_train.yaml)
+deterministic: false
+track: false
+num_epoch: 100
+data_loader:
+  common:
+    num_voxel_bins: 15
+  train:
+    gpu: 0
+    args:
+      batch_size: 3
+  val:
+    gpu: 0
+    batch_freq: 1500
+loss:
+  final_prediction_nonseq:
+    loss_type: sparse_l1
+    weight: 1.0
+    seq_weight: avg
+    seq_norm: false
+
+dataset:
+  representation_type: voxel
+
+optim:
+  optimizer: adam
+  scheduler: onecycle
+  lr: 1e-4
+
+callbacks:
+  logger:
+    enable:
+    log_keys:
+      batch_end:
+        - loss
+        - lr
+        - delta_flow_uncertainty_mean  # Add uncertainty metrics when enabled
+
+  validator:
+    enable:
+    frequency_type: step
+    frequency: 500
+    sanity_run_step: 3
+
+validation:
+  nonrec:
+    dataset:
+      representation_type: ${dataset.representation_type}
+
+model:
+  pretrain_ckpt: null
+  # Enhanced model-specific settings - these will override settings in the model yaml
+  update_block:
+    type: enhanced  # Use the enhanced update block
+    use_attention: true  # Enable attention mechanism
+    with_uncertainty: true  # Enable uncertainty estimation
+    multi_scale: true  # Enable multi-scale processing
+

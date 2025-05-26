@@ -4,7 +4,8 @@ from .utils.trainer import Trainer
 
 # @hydra.main(config_path="config", config_name="mvsec_train")
 # @hydra.main(config_path="config", config_name="tid_train")
-@hydra.main(config_path="config", config_name="id_train")
+# @hydra.main(config_path="config", config_name="id_train")
+@hydra.main(config_path="config", config_name="enhanced_id_train")  # Use the enhanced model for training
 
 def main(config):
     print(OmegaConf.to_yaml(config))
