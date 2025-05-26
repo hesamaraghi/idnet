@@ -2,4 +2,4 @@ __pycache__/
 .vscode/
 data/*
 !data/.gitkeep
-idn/checkpoint_OLD/*
+idn/checkpoint/*
