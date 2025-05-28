@@ -5,10 +5,6 @@ Work accepted to 2024 IEEE International Conference on Robotics and Automation (
 
 <img width="1024" alt="idnet-graphical-abstract" src="https://github.com/tudelft/idnet/assets/10345786/0fa638b2-583e-4ad4-99b1-7bcc9a5e465f">
 
-![fig_1](https://github.com/user-attachments/assets/2b6e43ab-975a-4626-a5dd-65de181c1fa4)
-
-![random_visualization_random](https://github.com/user-attachments/assets/61eb1bb9-6974-4538-9e38-5dc7b8436bce)
-
 ![id-viz](https://github.com/tudelft/idnet/assets/10345786/f6314f3a-7e24-444a-bd28-695267ede7b4)
 
 If you use this code in an academic context, please cite our work:
