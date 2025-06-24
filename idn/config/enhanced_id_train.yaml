@@ -68,3 +68,7 @@ model:
     with_uncertainty: true  # Enable uncertainty estimation
     multi_scale: true  # Enable multi-scale processing
 
+wandb:
+  enabled: true
+  project: "idnet"
+  run_name: "original-enhanced-id-8x-sub-dataset"

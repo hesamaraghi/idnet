@@ -5,6 +5,7 @@ data_loader:
 
 
 logger:
+  save_dir: logs
   saved_tensors:
     final_prediction:
     flow_gt_event_volume_new:

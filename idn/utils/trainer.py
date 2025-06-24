@@ -1,4 +1,5 @@
 import os
+git import wandb
 import torch
 from torch.utils.data import DataLoader, ConcatDataset
 from tqdm import tqdm
@@ -6,6 +7,7 @@ from types import GeneratorType
 from collections import namedtuple
 from torchinfo import summary
 from torch.optim.lr_scheduler import OneCycleLR
+from omegaconf import OmegaConf
 
 from .torch_environ import config_torch
 from .helper_functions import move_batch_to_cuda
@@ -66,11 +68,26 @@ class Trainer(CallbackBridge):
         self.configure_callbacks(config.callbacks)
 
         self.execute_callbacks("on_init_end")
+        
+        if config.get("wandb", {}).get("enabled", False):
+            print("Initializing Weights & Biases logging...")
+            print("Project:", config.wandb.project)
+            print("Run name:", config.wandb.get("run_name", None))
+
+            wandb.init(project=config.wandb.project,
+                    name=config.wandb.get("run_name", None),
+                    config=OmegaConf.to_object(config),  # logs your full config
+                    resume="allow",
+                    )
+            wandb.watch(self.model, log="all", log_freq=100)
+
 
     def configure_train_dataloader(self):
         if self.config.dataset.dataset_name == "dsec":
             train_set = assemble_dsec_sequences(
                 self.config.dataset.common.data_root,
+                include_seq=set(
+                    [val_seq for x in self.config.get("validation", dict()).values() for val_seq in x.dataset.train.seq]),
                 exclude_seq=set(
                     [val_seq for x in self.config.get("validation", dict()).values() for val_seq in x.dataset.val.seq]),
                 require_gt=True,
@@ -169,12 +186,26 @@ class Trainer(CallbackBridge):
                 self.loss.backward()
             self.execute_callbacks("on_step_begin")
             self.optimizer.step()
+            
+            if self.config.get("wandb", {}).get("enabled", False):
+                wandb.log({
+                    "loss": self.loss,
+                    "step": self.step,
+                    "epoch": self.epoch,
+                    "lr": self.scheduler.get_last_lr()[0] if self.scheduler else self.config.optim.lr,
+                    **{k: getattr(self, f"loss_{k}", 0.0) for k in self.loss_config}
+                }, step=self.step)
+
+            
+            
             self.execute_callbacks("on_step_end")
             self.execute_callbacks("on_batch_end")
             self.step += 1
             if self.scheduler:
                 self.scheduler.step()
                 self.lr = self.scheduler.get_last_lr()[0]
+                
+        
         self.execute_callbacks("on_epoch_end")
         self.epoch += 1
 
@@ -205,3 +236,5 @@ class Trainer(CallbackBridge):
         finally:
             self.execute_callbacks("on_train_end")
 
+        if self.config.get("wandb", {}).get("enabled", False):
+            wandb.finish()

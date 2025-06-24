@@ -4,8 +4,13 @@ defaults:
 num_voxel_bins: 15
 
 train:
-  use_all_seqs: true
-  seq: []
+  use_all_seqs: false
+  seq: [
+      zurich_city_02_d,
+      zurich_city_11_a,
+      zurich_city_08_a,
+      zurich_city_05_b
+    ]
   load_gt: true
   downsample_ratio: 1
 val:

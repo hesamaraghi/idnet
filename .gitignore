@@ -2,3 +2,8 @@ __pycache__/
 .vscode/
 data/*
 !data/.gitkeep
+sbatch_folder
+slurm_output
+sbatch_history.txt
+wandb
+logs
