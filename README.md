@@ -5,7 +5,6 @@ Work accepted to 2024 IEEE International Conference on Robotics and Automation (
 
 <img width="1024" alt="idnet-graphical-abstract" src="https://github.com/tudelft/idnet/assets/10345786/0fa638b2-583e-4ad4-99b1-7bcc9a5e465f">
 
-
 ![id-viz](https://github.com/tudelft/idnet/assets/10345786/f6314f3a-7e24-444a-bd28-695267ede7b4)
 
 If you use this code in an academic context, please cite our work:
