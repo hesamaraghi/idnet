@@ -37,6 +37,18 @@ class Trainer(CallbackBridge):
         super().__init__()
         self.config = config
         config_torch(config.torch)
+        
+        if config.get("wandb", {}).get("enabled", False):
+            print("Initializing Weights & Biases logging...")
+            print("Project:", config.wandb.project)
+            print("Run name:", config.wandb.get("run_name", None))
+
+            wandb.init(project=config.wandb.project,
+                    name=config.wandb.get("run_name", None),
+                    config=OmegaConf.to_object(config),  # logs your full config
+                    resume="allow",
+                    )
+        
         self.model = model if model is not None else \
             get_model_by_name(config.model.name, config.model)
         if config.model.get("pretrain_ckpt", None):
@@ -63,23 +75,15 @@ class Trainer(CallbackBridge):
         if config.get("resume_ckpt", None):
             resume_only_model = config.get("finetune", False)
             self.resume_from_ckpt(config.resume_ckpt, resume_only_model)
-             
-        if config.get("wandb", {}).get("enabled", False):
-            print("Initializing Weights & Biases logging...")
-            print("Project:", config.wandb.project)
-            print("Run name:", config.wandb.get("run_name", None))
-
-            wandb.init(project=config.wandb.project,
-                    name=config.wandb.get("run_name", None),
-                    config=OmegaConf.to_object(config),  # logs your full config
-                    resume="allow",
-                    )
             
         self.logger = self.configure_tracker()
         
         self.configure_callbacks(config.callbacks)
 
         self.execute_callbacks("on_init_end")
+        
+        if config.get("wandb", {}).get("enabled", False):
+            wandb.config.update(OmegaConf.to_object(config))
 
     def configure_train_dataloader(self):
         if self.config.dataset.dataset_name == "dsec":
