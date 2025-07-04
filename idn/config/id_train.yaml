@@ -52,6 +52,11 @@ validation:
 model:
   pretrain_ckpt: null
 
+wandb:
+  enabled: true
+  project: "idnet"
+  run_name: "original-id-8x-sub-dataset-from-loaded"
+
 defaults:
   - validation@_group_.nonrec: nonrec
   - hydra: custom_hydra

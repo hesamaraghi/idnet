@@ -23,7 +23,7 @@ class CBLogger(Callback):
         log_dict = dict()
         for key in self.logger_config.log_keys["batch_end"]:
             log_dict[key] = getattr(caller, key, None)
-        self.logger.log_dict_at_step(log_dict)
+        self.logger.log_dict_at_step(log_dict, caller.step)
 
     def on_epoch_end(self, caller):
         if self.logger.log_dir is not None:

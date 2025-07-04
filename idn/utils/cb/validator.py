@@ -14,7 +14,7 @@ class CBValidator(Callback):
         validator = Validator(caller.config.validation)
         results = validator(caller.model)
         if self.logger is not None and not sanity_check_run:
-            self.logger.log_dict_at_step(results)
+            self.logger.log_dict_at_step(results, caller.step)
         else:
             print(results)
 
