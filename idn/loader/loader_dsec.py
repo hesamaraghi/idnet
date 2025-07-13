@@ -20,7 +20,9 @@ from torchvision import transforms as tf
 from torch.utils.data import Dataset, DataLoader
 from matplotlib import pyplot as plt, transforms
 from ..utils import transformers
-
+from tqdm import tqdm
+import hdf5plugin
+from scipy.ndimage import gaussian_filter
 
 from ..utils.dsec_utils import RepresentationType, VoxelGrid, PolarityCount, flow_16bit_to_float
 from ..utils.transformers import (
@@ -188,9 +190,163 @@ class EventSlicer:
         return self.ms_to_idx[time_ms]
 
 
+class HarrisRecursive:
+
+    def __init__(self, tau: float, filter_size: int, image_size: Tuple[int, int]):
+
+        assert filter_size % 2 == 1, "Filter size must be odd"
+        print(f"Using tau={tau} and filter_size={filter_size} for Harris Recursive")
+        self.tau = tau
+        self.filter_size = filter_size
+        self.image_size = image_size
+        self.K = filter_size // 2
+        self.H, self.W = image_size
+
+        sigma = filter_size / 5.0
+        self.kernel = np.zeros((filter_size, filter_size))
+        self.kernel[filter_size // 2, filter_size // 2] = 1
+        self.gaussian_kernel = gaussian_filter(self.kernel, sigma)
+        self.gaussian_kernel = self.gaussian_kernel / np.sum(self.gaussian_kernel)
+
+    def __call__(self, data):
+
+        self.last_time_tensor = np.full(
+            (2, self.H + 2 * self.K + 2, self.W + 2 * self.K + 2),
+            float("-inf"),
+            dtype=np.float32,
+        )
+        self.temporal_accumulation_tensor = np.full(
+            (2, self.H + 2 * self.K + 2, self.W + 2 * self.K + 2),
+            float("0"),
+            dtype=np.float32,
+        )
+
+        self.filter_value_recursive = np.zeros(data.shape[0], dtype=np.float32)
+        self.temporal_accumulation_tensor_list = []
+        self.structure_tensor = np.zeros((3, data.shape[0]), dtype=np.float32)
+
+        # sorted_indices = torch.argsort(data.pos[..., -1])
+        # data.pos = data.pos[sorted_indices]
+        # data.x = data.x[sorted_indices]
+
+        data["t"] = (data["t"] - data["t"][0]).astype(np.float32)
+
+        for i, ev in enumerate(data):
+
+            # pp = 0 if data.x[i] <= 0 else 1
+            temporal_adding_value = -1 if ev["p"] <= 0 else 1
+            pp = 0
+            # temporal_adding_value = 1; pp = 0
+            # temporal_adding_value = 1
+
+            h = ev["y"] + self.K + 1
+            w = ev["x"] + self.K + 1
+            t = ev["t"]
+
+            h_start = h - self.K
+            h_end = h + self.K
+            w_start = w - self.K
+            w_end = w + self.K
+
+            # Compute the temporal lag
+            temporal_lag = np.exp(
+                -(
+                    t
+                    - self.last_time_tensor[
+                        pp, h_start - 1 : h_end + 2, w_start - 1 : w_end + 2
+                    ]
+                )
+                / self.tau
+            )
+
+            # update the last time tensor
+            self.last_time_tensor[
+                pp, h_start - 1 : h_end + 2, w_start - 1 : w_end + 2
+            ] = t
+
+            # update the temporal accumulation tensor
+
+            self.temporal_accumulation_tensor[
+                pp, h_start - 1 : h_end + 2, w_start - 1 : w_end + 2
+            ] *= temporal_lag
+            self.temporal_accumulation_tensor[pp, h, w] += temporal_adding_value
+
+            self.h_diff_tensor = cv2.Sobel(
+                self.temporal_accumulation_tensor[
+                    pp, h_start - 1 : h_end + 2, w_start - 1 : w_end + 2
+                ],
+                -1,
+                0,
+                1,
+                ksize=3,
+                scale=1,
+                delta=0,
+                borderType=cv2.BORDER_DEFAULT,
+            )[1:-1, 1:-1]
+            self.w_diff_tensor = cv2.Sobel(
+                self.temporal_accumulation_tensor[
+                    pp, h_start - 1 : h_end + 2, w_start - 1 : w_end + 2
+                ],
+                -1,
+                1,
+                0,
+                ksize=3,
+                scale=1,
+                delta=0,
+                borderType=cv2.BORDER_DEFAULT,
+            )[1:-1, 1:-1]
+
+            self.structure_tensor[0, i] = np.sum(
+                self.h_diff_tensor * self.h_diff_tensor * self.gaussian_kernel
+            )
+            self.structure_tensor[1, i] = np.sum(
+                self.w_diff_tensor * self.w_diff_tensor * self.gaussian_kernel
+            )
+            self.structure_tensor[2, i] = np.sum(
+                self.w_diff_tensor * self.h_diff_tensor * self.gaussian_kernel
+            )
+
+            self.filter_value_recursive[i] = np.sum(
+                self.temporal_accumulation_tensor[
+                    pp, h_start : h_end + 1, w_start : w_end + 1
+                ]
+                * self.gaussian_kernel
+            )
+
+        a = self.structure_tensor[0]
+        b = self.structure_tensor[1]
+        c = self.structure_tensor[2]
+        trace = a + b
+        det_term = np.sqrt((a - b) ** 2 + 4 * c**2)
+        self.eig1 = 0.5 * (trace + det_term)
+        self.eig2 = 0.5 * (trace - det_term)
+
+
 class Sequence(Dataset):
-    def __init__(self, seq_path: Path, representation_type: RepresentationType, mode: str = 'test', delta_t_ms: int = 100,
-                 num_bins: int = 15, transforms=[], name_idx=0, visualize=False, load_gt=False):
+
+    def __init__(
+        self,
+        seq_path: Path,
+        representation_type: RepresentationType,
+        mode: str = "test",
+        delta_t_ms: int = 100,
+        num_bins: int = 15,
+        transforms=[],
+        name_idx=0,
+        visualize=False,
+        load_gt=False,
+        add_eigenvalues=False,
+        tau=15_000,
+        filter_size=7,
+        in_memory=False,
+        force_preprocess=False,
+        do_not_save_preprocessed=False,
+    ):
+
+        self.add_eigenvalues = add_eigenvalues
+        self.in_memory = in_memory
+        self.force_preprocess = force_preprocess
+
         assert num_bins >= 1
         assert delta_t_ms == 100
         assert seq_path.is_dir()
@@ -208,13 +364,20 @@ class Sequence(Dataset):
             │   └── test_forward_flow_timestamps.csv
 
         '''
+        self.seq_path = PurePath(seq_path)
         self.seq_name = PurePath(seq_path).name
         self.mode = mode
         self.name_idx = name_idx
         self.visualize_samples = visualize
         self.load_gt = load_gt
         self.transforms = transforms
-        if self.mode is "test":
+
+        self.do_not_save_preprocessed = do_not_save_preprocessed
+        self.preprocessed_path = Path(self.seq_path / 'preprocessed')
+        if not self.preprocessed_path.exists():  
+            self.preprocessed_path.mkdir(parents=True, exist_ok=True)
+
+        if self.mode == "test":
             # Get Test Timestamp File
             ev_dir_location = seq_path / 'events_left'
             timestamp_file = seq_path / 'test_forward_flow_timestamps.csv'
@@ -224,7 +387,7 @@ class Sequence(Dataset):
             self.indices = np.arange(len(timestamps_images))[::2][1:-1]
             self.timestamps_flow = timestamps_images[::2][1:-1]
 
-        elif self.mode is "train":
+        elif self.mode == "train":
             ev_dir_location = seq_path / 'events' / 'left'
             seq_name = seq_path.parts[-1]
             flow_path = seq_path.parents[1] / \
@@ -279,6 +442,21 @@ class Sequence(Dataset):
         self.h5rect = h5py.File(str(ev_rect_file), 'r')
         self.rectify_ev_map = self.h5rect['rectify_map'][()]
 
+        if self.add_eigenvalues:
+            hkjhkhhk
+            self.tau = tau
+            self.filter_size = filter_size
+            self.harris_recursive = HarrisRecursive(
+                tau=self.tau,
+                filter_size=self.filter_size,
+                image_size=(self.height, self.width),
+            )
+
+        if self.in_memory:
+            self.data = []
+            print(f"Loading data for sequence {self.seq_name} into memory...")
+            for i in tqdm(range(len(self))):
+                self.data.append(self.get_data_sample(i))
 
     def events_to_voxel_grid(self, p, t, x, y, device: str = 'cpu'):
         t = (t - t[0]).astype('float32')
@@ -293,6 +471,21 @@ class Sequence(Dataset):
             'y': torch.from_numpy(y),
         }
         return self.voxel_grid.convert(event_data_torch)
+
+    def value_to_voxel_grid(self, val, t, x, y, device: str = 'cpu'):
+        t = (t - t[0]).astype('float32')
+        t = (t/t[-1])
+        x = x.astype('float32')
+        y = y.astype('float32')
+        val = val.astype('float32')
+        event_data_torch = {
+            'val': torch.from_numpy(val),
+            't': torch.from_numpy(t),
+            'x': torch.from_numpy(x),
+            'y': torch.from_numpy(y),
+        }
+        utuyt
+        return self.voxel_grid.convert(event_data_torch, val_type='val')
 
     def getHeightAndWidth(self):
         return self.height, self.width
@@ -331,80 +524,141 @@ class Sequence(Dataset):
         assert y.max() < self.height
         return rectify_map[y, x]
 
+    def get_eigenvalues(self, x, y, t, p):
+        dtype = [
+            ('x', np.uint16),
+            ('y', np.uint16),
+            ('t', np.uint64),
+            ('p', np.uint8),
+        ]
+        events = np.empty(x.shape[0], dtype=dtype)
+        events['x'] = x
+        events['y'] = y
+        events['t'] = t
+        events['p'] = p
+        kjlljlkj
+        self.harris_recursive(events)
+
     def get_data_sample(self, index, crop_window=None, flip=None):
         # First entry corresponds to all events BEFORE the flow map
         # Second entry corresponds to all events AFTER the flow map (corresponding to the actual fwd flow)
         names = ['event_volume_old', 'event_volume_new']
-        ts_start = [self.timestamps_flow[index] -
-                    self.delta_t_us, self.timestamps_flow[index]]
-        ts_end = [self.timestamps_flow[index],
-                  self.timestamps_flow[index] + self.delta_t_us]
+        preprocessed_file_path = self.preprocessed_path / f"{index:05d}.pt"
+        if not self.force_preprocess and preprocessed_file_path.exists():
+            # print(f"Loading preprocessed data for index {index} for sequence {self.seq_name} from {preprocessed_file_path}")
+            loaded_file = torch.load(preprocessed_file_path)       
+            if not self.add_eigenvalues:
+                for name in names:
+                    loaded_file[name] = loaded_file[name][:self.num_bins,:,:]
+            return loaded_file
+        else:
+            ts_start = [self.timestamps_flow[index] -
+                        self.delta_t_us, self.timestamps_flow[index]]
+            ts_end = [self.timestamps_flow[index],
+                    self.timestamps_flow[index] + self.delta_t_us]
 
-        file_index = self.indices[index]
+            file_index = self.indices[index]
 
-        output = {
-            'file_index': file_index,
-            'timestamp': self.timestamps_flow[index],
-            'seq_name': self.seq_name
-        }
-        # Save sample for benchmark submission
-        output['save_submission'] = file_index in self.idx_to_visualize
-        output['visualize'] = self.visualize_samples
+            output = {
+                'file_index': file_index,
+                'timestamp': self.timestamps_flow[index],
+                'seq_name': self.seq_name
+            }
+            # Save sample for benchmark submission
+            output['save_submission'] = file_index in self.idx_to_visualize
+            output['visualize'] = self.visualize_samples
 
-        for i in range(len(names)):
-            event_data = self.event_slicer.get_events(
-                ts_start[i], ts_end[i])
+            for i in range(len(names)):
+                event_data = self.event_slicer.get_events(
+                    ts_start[i], ts_end[i])
 
-            p = event_data['p']
-            t = event_data['t']
-            x = event_data['x']
-            y = event_data['y']
+                p = event_data['p']
+                t = event_data['t']
+                x = event_data['x']
+                y = event_data['y']
 
-            xy_rect = self.rectify_events(x, y)
-            x_rect = xy_rect[:, 0]
-            y_rect = xy_rect[:, 1]
+                if self.add_eigenvalues:
+                    self.get_eigenvalues(x, y, t, p)
+                    eig_1 = self.harris_recursive.eig1
+                    eig_2 = self.harris_recursive.eig2
+                    print(f"Eigenvalues computed for index {index} and sequence {self.seq_name}")
+                    print(f"Eigenvalue 1: min. {eig_1.min()}, max. {eig_1.max()}")
+                    print(f"Eigenvalue 2: min. {eig_2.min()}, max. {eig_2.max()}")
+                xy_rect = self.rectify_events(x, y)
+                x_rect = xy_rect[:, 0]
+                y_rect = xy_rect[:, 1]
 
-            if crop_window is not None:
-                # Cropping (+- 2 for safety reasons)
-                x_mask = (x_rect >= crop_window['start_x']-2) & (
-                    x_rect < crop_window['start_x']+crop_window['crop_width']+2)
-                y_mask = (y_rect >= crop_window['start_y']-2) & (
-                    y_rect < crop_window['start_y']+crop_window['crop_height']+2)
-                mask_combined = x_mask & y_mask
-                p = p[mask_combined]
-                t = t[mask_combined]
-                x_rect = x_rect[mask_combined]
-                y_rect = y_rect[mask_combined]
+                if crop_window is not None:
+                    # Cropping (+- 2 for safety reasons)
+                    x_mask = (x_rect >= crop_window['start_x']-2) & (
+                        x_rect < crop_window['start_x']+crop_window['crop_width']+2)
+                    y_mask = (y_rect >= crop_window['start_y']-2) & (
+                        y_rect < crop_window['start_y']+crop_window['crop_height']+2)
+                    mask_combined = x_mask & y_mask
+                    p = p[mask_combined]
+                    t = t[mask_combined]
+                    x_rect = x_rect[mask_combined]
+                    y_rect = y_rect[mask_combined]
+                    if self.add_eigenvalues:
+                        eig_1 = eig_1[mask_combined]
+                        eig_2 = eig_2[mask_combined]
 
-            if self.voxel_grid is None:
-                raise NotImplementedError
-            else:
-                event_representation = self.events_to_voxel_grid(
-                    p, t, x_rect, y_rect)
-                output[names[i]] = event_representation
-            output['name_map'] = self.name_idx
+                if self.voxel_grid is None:
+                    raise NotImplementedError
+                else:
+                    event_representation = self.events_to_voxel_grid(
+                        p, t, x_rect, y_rect)
+                    if self.add_eigenvalues:
+                        hkhjhk
+                        eig_1_representation = self.value_to_voxel_grid(
+                            self.harris_recursive.eig1, t, x_rect, y_rect
+                        )
+                        eig_2_representation = self.value_to_voxel_grid(
+                            self.harris_recursive.eig2, t, x_rect, y_rect
+                        )
+                        # Add eigenvalues to the output
+                        print(f"Voxel grid representation with eigenvalues for index {index} and sequence {self.seq_name}")
+                        print(f"Eigenvalue 1: min. {eig_1_representation.min()}, max. {eig_1_representation.max()}")
+                        print(f"Eigenvalue 2: min. {eig_2_representation.min()}, max. {eig_2_representation.max()}")
+                        event_representation = torch.cat(
+                            (
+                                event_representation,
+                                eig_1_representation,
+                                eig_2_representation,
+                            ),
+                            dim=0,
+                        )
+                    output[names[i]] = event_representation    
+                output['name_map'] = self.name_idx
+
+                if self.load_gt:
+                    output['flow_gt_' + names[i]
+                        ] = [torch.tensor(x) for x in self.load_flow(self.flow_png[index + i])]
+
+                    output['flow_gt_' + names[i]
+                        ][0] = torch.moveaxis(output['flow_gt_' + names[i]][0], -1, 0)
+                    output['flow_gt_' + names[i]
+                        ][1] = torch.unsqueeze(output['flow_gt_' + names[i]][1], 0)
 
             if self.load_gt:
-                output['flow_gt_' + names[i]
-                       ] = [torch.tensor(x) for x in self.load_flow(self.flow_png[index + i])]
-
-                output['flow_gt_' + names[i]
-                       ][0] = torch.moveaxis(output['flow_gt_' + names[i]][0], -1, 0)
-                output['flow_gt_' + names[i]
-                       ][1] = torch.unsqueeze(output['flow_gt_' + names[i]][1], 0)
-
-        if self.load_gt:
-            if index + 2 < len(self.flow_png):
-                output['flow_gt_next'] = [torch.tensor(
-                    x) for x in self.load_flow(self.flow_png[index + 2])]
-                output['flow_gt_next'][0] = torch.moveaxis(
-                    output['flow_gt_next'][0], -1, 0)
-                output['flow_gt_next'][1] = torch.unsqueeze(
-                    output['flow_gt_next'][1], 0)
-        return output
+                if index + 2 < len(self.flow_png):
+                    output['flow_gt_next'] = [torch.tensor(
+                        x) for x in self.load_flow(self.flow_png[index + 2])]
+                    output['flow_gt_next'][0] = torch.moveaxis(
+                        output['flow_gt_next'][0], -1, 0)
+                    output['flow_gt_next'][1] = torch.unsqueeze(
+                        output['flow_gt_next'][1], 0)
+            if self.do_not_save_preprocessed:
+                return output
+            torch.save(output, preprocessed_file_path)
+            print(f"Saved preprocessed data for index {index} for sequence {self.seq_name} at {preprocessed_file_path}")
+            return output
 
     def __getitem__(self, idx):
-        sample = self.get_data_sample(idx)
+        if self.in_memory:
+            sample = self.data[idx]
+        else:
+            sample = self.get_data_sample(idx)
         for key_t, transform in self.transforms.items():
             if key_t == "hflip":
                 if random.random() > 0.5:
@@ -428,7 +682,6 @@ class Sequence(Dataset):
                 apply_randomcrop_to_sample(sample, crop_size=transform)
             else:
                 apply_transform_to_field(sample, transform, key_t)
-
 
         return sample
 
@@ -682,8 +935,14 @@ def assemble_dsec_sequences(dataset_root, include_seq=None, exclude_seq=None, re
         dataset_cls = SequenceRecurrent if hasattr(
             config, "recurrent") and config.recurrent else Sequence
         extra_arg = dict(
-            sequence_length=config.sequence_length) if dataset_cls == SequenceRecurrent else dict()
-
+            sequence_length=config.sequence_length) if dataset_cls == SequenceRecurrent else dict(        
+                add_eigenvalues=config.add_eigenvalues, 
+                tau=config.tau,
+                filter_size=config.filter_size,
+                in_memory=config.in_memory,
+                force_preprocess=config.force_preprocess,
+                do_not_save_preprocessed=config.do_not_save_preprocessed,
+            )
         seq_dataset.append(dataset_cls(Path(event_root) / seq,
                            representation_type=representation_type, mode="train",
                            load_gt=require_gt, transforms=transforms, **extra_arg))

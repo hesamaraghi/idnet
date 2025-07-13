@@ -16,8 +16,16 @@ class IDEDEQIDO(nn.Module):
         self.downsample = getattr(config, 'downsample', 8)
         self.input_flowmap = getattr(config, 'input_flowmap', False)
         self.pred_next_flow = getattr(config, 'pred_next_flow', False)
+        self.add_eigenvalues = getattr(config, "add_eigenvalues", False)
+        print(f"Using add_eigenvalues: {self.add_eigenvalues}")
+        self.num_bins = getattr(config, "num_voxel_bins", 15)
+        print(f"Using num_bins: {self.num_bins}")
         self.fnet = LiteEncoder(
-            output_dim=self.input_dim//2, dropout=0, n_first_channels=2, stride=2 if self.downsample == 8 else 1)
+            output_dim=self.input_dim // 2,
+            dropout=0,
+            n_first_channels=3 if self.add_eigenvalues else 1,
+            stride=2 if self.downsample == 8 else 1,
+        )
         self.update_net = LiteUpdateBlock(
             hidden_dim=self.hidden_dim, input_dim=self.input_dim,
             num_outputs=2 if self.pred_next_flow else 1,
@@ -115,6 +123,10 @@ class IDEDEQIDO(nn.Module):
         x_raw = event_bins["event_volume_new"]
 
         B, V, H, W = x_raw.shape
+        if self.add_eigenvalues:
+            x_raw = x_raw.view(B, 3, V//3, H, W).permute(0, 2, 1, 3, 4)
+        else:
+            x_raw = x_raw[:, :self.num_bins, :, :].unsqueeze(2)
         flow_total = torch.zeros(B, 2, H, W).to(
             x_raw.device) if flow_init is None else flow_init.clone()
 
@@ -128,11 +140,11 @@ class IDEDEQIDO(nn.Module):
         for iter in range(deblur_iters):
             if self.deblur:
                 x_deblur = self.deblur_tensor(x_deblur, delta_flow)
-                x = torch.stack([x_deblur, x_deblur], dim=1)
+                # x = torch.stack([x_deblur, x_deblur], dim=1)
                 x_deblur_history = torch.cat(
                     [x_deblur_history, x_deblur.unsqueeze(1)], dim=1)
-            else:
-                x = torch.stack([x_raw, x_raw], dim=1)
+            # else:
+            # x = torch.stack([x_raw, x_raw], dim=1)
 
             if net_co is not None:
                 net = net_co
@@ -144,15 +156,15 @@ class IDEDEQIDO(nn.Module):
                     else:
                         net = torch.zeros(
                             (B, self.hidden_dim,
-                                H//self.downsample, W//self.downsample)).to(x.device)
+                                H//self.downsample, W//self.downsample)).to(x_deblur.device)
                 else:
                     if self.cnet is not None:
                         net = self.cnet(x)
                     else:
                         net = torch.zeros(
                             (B, self.hidden_dim,
-                                H//self.downsample, W//self.downsample)).to(x.device)
-            for i, slice in enumerate(x.permute(2, 0, 1, 3, 4)):
+                                H//self.downsample, W//self.downsample)).to(x_deblur.device)
+            for i, slice in enumerate(x_deblur.permute(1, 0, 2, 3, 4)):
                 f = self.fnet(slice)
                 net = self.update_net(net, f)
 

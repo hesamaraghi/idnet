@@ -25,10 +25,10 @@ class VoxelGrid(EventRepresentation):
         self.nb_channels = input_size[0]
         self.normalize = normalize
 
-    def convert(self, events):
+    def convert(self, events, val_type='p'):
         C, H, W = self.voxel_grid.shape
         with torch.no_grad():
-            self.voxel_grid = self.voxel_grid.to(events['p'].device)
+            self.voxel_grid = self.voxel_grid.to(events[val_type].device)
             voxel_grid = self.voxel_grid.clone()
 
             t_norm = events['t']
@@ -38,7 +38,10 @@ class VoxelGrid(EventRepresentation):
             y0 = events['y'].int()
             t0 = t_norm.int()
 
-            value = 2*events['p']-1
+            if val_type == 'p':
+                value = 2*events[val_type]-1
+            else:
+                value = events[val_type]
             #start_t = time()
             for xlim in [x0, x0+1]:
                 for ylim in [y0, y0+1]:
