@@ -4,7 +4,7 @@ from .utils.trainer import Trainer
 
 # @hydra.main(config_path="config", config_name="mvsec_train")
 # @hydra.main(config_path="config", config_name="tid_train")
-@hydra.main(config_path="config", config_name="id_train_eigen")
+@hydra.main(config_path="config", config_name="id_train_original_all")
 
 def main(config):
     

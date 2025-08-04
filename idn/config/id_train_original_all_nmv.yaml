@@ -48,12 +48,7 @@ validation:
       representation_type: ${dataset.representation_type}
       train:
         use_all_seqs: false
-        seq: [
-            zurich_city_02_d,
-            zurich_city_11_a,
-            zurich_city_08_a,
-            zurich_city_05_b
-          ]
+        seq: ["zurich_city_02_c"]
         add_eigenvalues: ${dataset.train.add_eigenvalues}
         add_filter_values: ${dataset.train.add_filter_values}
         tau: ${dataset.train.tau}
@@ -86,9 +81,9 @@ dataset:
     add_filter_values: true
     tau: 1000 
     filter_size: 5
-    in_memory: true
+    in_memory: false
     force_preprocess: false
-    do_not_save_preprocessed: true
+    do_not_save_preprocessed: false
 
 torch:
   debug_grad: false
@@ -97,7 +92,7 @@ torch:
 wandb:
   enabled: true
   project: "idnet"
-  run_name: "-subdataset-id-8x-1mS-5x5"
+  run_name: "original-all-id-8x"
 
 defaults:
   - validation@_group_.nonrec: nonrec

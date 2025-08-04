@@ -158,9 +158,19 @@ def apply_randomcrop_to_sample(sample, crop_size):
     :return: the cropped sample
     """
     i, j, h, w = RandomCrop.get_params(
-        sample["event_volume_old"], output_size=crop_size)
-    keys_to_crop = ["event_volume_old", "event_volume_new",
-                    "flow_gt_event_volume_old", "flow_gt_event_volume_new", "reverse_flow_gt_event_volume_old", "reverse_flow_gt_event_volume_new"]
+        sample["event_volume_new"], output_size=crop_size)
+    keys_to_crop = [
+        # "event_volume_old",
+        "event_volume_new",
+        # "eigenvalues_volume_old",
+        "eigenvalues_volume_new",
+        # "filter_values_volume_old",
+        "filter_values_volume_new",
+        # "flow_gt_event_volume_old",
+        "flow_gt_event_volume_new",
+        # "reverse_flow_gt_event_volume_old",
+        "reverse_flow_gt_event_volume_new",
+    ]
 
     for key, value in sample.items():
         if key in keys_to_crop:

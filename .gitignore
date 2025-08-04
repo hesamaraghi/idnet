@@ -8,3 +8,6 @@ sbatch_history.txt
 wandb
 logs
 *.ckpt
+saved_images
+ckpt_dir/*
+*.png

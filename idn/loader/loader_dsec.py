@@ -336,6 +336,7 @@ class Sequence(Dataset):
         visualize=False,
         load_gt=False,
         add_eigenvalues=False,
+        add_filter_values=False,
         tau=15_000,
         filter_size=7,
         in_memory=False,
@@ -344,6 +345,7 @@ class Sequence(Dataset):
     ):
 
         self.add_eigenvalues = add_eigenvalues
+        self.add_filter_values = add_filter_values
         self.in_memory = in_memory
         self.force_preprocess = force_preprocess
 
@@ -442,8 +444,7 @@ class Sequence(Dataset):
         self.h5rect = h5py.File(str(ev_rect_file), 'r')
         self.rectify_ev_map = self.h5rect['rectify_map'][()]
 
-        if self.add_eigenvalues:
-            hkjhkhhk
+        if self.add_eigenvalues or self.add_filter_values:
             self.tau = tau
             self.filter_size = filter_size
             self.harris_recursive = HarrisRecursive(
@@ -484,7 +485,6 @@ class Sequence(Dataset):
             'x': torch.from_numpy(x),
             'y': torch.from_numpy(y),
         }
-        utuyt
         return self.voxel_grid.convert(event_data_torch, val_type='val')
 
     def getHeightAndWidth(self):
@@ -536,20 +536,20 @@ class Sequence(Dataset):
         events['y'] = y
         events['t'] = t
         events['p'] = p
-        kjlljlkj
         self.harris_recursive(events)
 
     def get_data_sample(self, index, crop_window=None, flip=None):
         # First entry corresponds to all events BEFORE the flow map
         # Second entry corresponds to all events AFTER the flow map (corresponding to the actual fwd flow)
         names = ['event_volume_old', 'event_volume_new']
+        eigenvalues_names = ['eigenvalues_volume_old', 'eigenvalues_volume_new']
+        filter_values_names = ['filter_values_volume_old', 'filter_values_volume_new']
         preprocessed_file_path = self.preprocessed_path / f"{index:05d}.pt"
         if not self.force_preprocess and preprocessed_file_path.exists():
             # print(f"Loading preprocessed data for index {index} for sequence {self.seq_name} from {preprocessed_file_path}")
             loaded_file = torch.load(preprocessed_file_path)       
-            if not self.add_eigenvalues:
-                for name in names:
-                    loaded_file[name] = loaded_file[name][:self.num_bins,:,:]
+            if not self.add_eigenvalues and not self.add_filter_values:
+                loaded_file['event_volume_new'] = loaded_file['event_volume_new'][:self.num_bins,:,:]
             return loaded_file
         else:
             ts_start = [self.timestamps_flow[index] -
@@ -577,13 +577,18 @@ class Sequence(Dataset):
                 x = event_data['x']
                 y = event_data['y']
 
-                if self.add_eigenvalues:
+                if self.add_eigenvalues or self.add_filter_values:
                     self.get_eigenvalues(x, y, t, p)
-                    eig_1 = self.harris_recursive.eig1
-                    eig_2 = self.harris_recursive.eig2
-                    print(f"Eigenvalues computed for index {index} and sequence {self.seq_name}")
-                    print(f"Eigenvalue 1: min. {eig_1.min()}, max. {eig_1.max()}")
-                    print(f"Eigenvalue 2: min. {eig_2.min()}, max. {eig_2.max()}")
+                    if self.add_eigenvalues:
+                        eig1 = self.harris_recursive.eig1
+                        eig2 = self.harris_recursive.eig2
+                        print(f"Eigenvalues computed for index {index} and sequence {self.seq_name}")
+                        print(f"Eigenvalue 1: min. {eig1.min()}, max. {eig1.max()}")
+                        print(f"Eigenvalue 2: min. {eig2.min()}, max. {eig2.max()}")
+                    if self.add_filter_values:
+                        filter_values = self.harris_recursive.filter_value_recursive
+                        print(f"Filter values computed for index {index} and sequence {self.seq_name}")
+                        print(f"Filter values: min. {filter_values.min()}, max. {filter_values.max()}")
                 xy_rect = self.rectify_events(x, y)
                 x_rect = xy_rect[:, 0]
                 y_rect = xy_rect[:, 1]
@@ -600,35 +605,42 @@ class Sequence(Dataset):
                     x_rect = x_rect[mask_combined]
                     y_rect = y_rect[mask_combined]
                     if self.add_eigenvalues:
-                        eig_1 = eig_1[mask_combined]
-                        eig_2 = eig_2[mask_combined]
-
+                        eig1 = eig1[mask_combined]
+                        eig2 = eig2[mask_combined]
+                    if self.add_filter_values:
+                        filter_values = filter_values[mask_combined]
                 if self.voxel_grid is None:
                     raise NotImplementedError
                 else:
                     event_representation = self.events_to_voxel_grid(
                         p, t, x_rect, y_rect)
+                    output[names[i]] = event_representation
                     if self.add_eigenvalues:
-                        hkhjhk
-                        eig_1_representation = self.value_to_voxel_grid(
-                            self.harris_recursive.eig1, t, x_rect, y_rect
+                        eig1_representation = self.value_to_voxel_grid(
+                            eig1, t, x_rect, y_rect
                         )
-                        eig_2_representation = self.value_to_voxel_grid(
-                            self.harris_recursive.eig2, t, x_rect, y_rect
+                        eig2_representation = self.value_to_voxel_grid(
+                            eig2, t, x_rect, y_rect
                         )
                         # Add eigenvalues to the output
-                        print(f"Voxel grid representation with eigenvalues for index {index} and sequence {self.seq_name}")
-                        print(f"Eigenvalue 1: min. {eig_1_representation.min()}, max. {eig_1_representation.max()}")
-                        print(f"Eigenvalue 2: min. {eig_2_representation.min()}, max. {eig_2_representation.max()}")
-                        event_representation = torch.cat(
+                        output[eigenvalues_names[i]] = torch.cat(
                             (
-                                event_representation,
-                                eig_1_representation,
-                                eig_2_representation,
+                                eig1_representation,
+                                eig2_representation,
                             ),
                             dim=0,
                         )
-                    output[names[i]] = event_representation    
+                        print(f"Voxel grid representation with eigenvalues for index {index} and sequence {self.seq_name}")
+                        print(f"Eigenvalue 1: min. {eig1_representation.min()}, max. {eig1_representation.max()}")
+                        print(f"Eigenvalue 2: min. {eig2_representation.min()}, max. {eig2_representation.max()}")   
+                    if self.add_filter_values:
+                        filter_values_representation = self.value_to_voxel_grid(
+                            filter_values, t, x_rect, y_rect
+                        )
+                        # Add filter values to the output
+                        output[filter_values_names[i]] = filter_values_representation
+                        print(f"Voxel grid representation with filter values for index {index} and sequence {self.seq_name}")
+                        print(f"Filter values: min. {filter_values_representation.min()}, max. {filter_values_representation.max()}")
                 output['name_map'] = self.name_idx
 
                 if self.load_gt:
@@ -648,11 +660,15 @@ class Sequence(Dataset):
                         output['flow_gt_next'][0], -1, 0)
                     output['flow_gt_next'][1] = torch.unsqueeze(
                         output['flow_gt_next'][1], 0)
+
+            cleaned_output = {
+                k: v for k, v in output.items() if not ("_old" in k or "_next" in k)
+            }
             if self.do_not_save_preprocessed:
-                return output
-            torch.save(output, preprocessed_file_path)
+                return cleaned_output
+            torch.save(cleaned_output, preprocessed_file_path)
             print(f"Saved preprocessed data for index {index} for sequence {self.seq_name} at {preprocessed_file_path}")
-            return output
+            return cleaned_output
 
     def __getitem__(self, idx):
         if self.in_memory:
@@ -832,10 +848,18 @@ class SequenceRecurrent(Sequence):
         # random crop
         if self.crop_size is not None:
             i, j, h, w = RandomCrop.get_params(
-                sample["event_volume_old"], output_size=self.crop_size)
-            keys_to_crop = ["event_volume_old", "event_volume_new",
-                            "flow_gt_event_volume_old", "flow_gt_event_volume_new", 
-                            "flow_gt_next",]
+                sample["event_volume_new"], output_size=self.crop_size)
+            keys_to_crop = [
+                # "event_volume_old",
+                "event_volume_new",
+                # "eigenvalues_volume_old",
+                "eigenvalues_volume_new",
+                # "filter_values_volume_old",
+                "filter_values_volume_new",
+                # "flow_gt_event_volume_old",
+                "flow_gt_event_volume_new",
+                # "flow_gt_next",
+            ]
 
             for sample in sequence:
                 for key, value in sample.items():
@@ -937,6 +961,7 @@ def assemble_dsec_sequences(dataset_root, include_seq=None, exclude_seq=None, re
         extra_arg = dict(
             sequence_length=config.sequence_length) if dataset_cls == SequenceRecurrent else dict(        
                 add_eigenvalues=config.add_eigenvalues, 
+                add_filter_values=config.add_filter_values,
                 tau=config.tau,
                 filter_size=config.filter_size,
                 in_memory=config.in_memory,
@@ -1000,9 +1025,22 @@ def train_collate(sample_list):
         if field_name == 'new_sequence':
             batch['new_sequence'] = [sample[field_name]
                                      for sample in sample_list]
-        if field_name.startswith("event_volume"):
-            batch[field_name] = torch.stack(
-                [sample[field_name] for sample in sample_list])
+        if (
+            field_name.startswith("event_volume")
+            or field_name.startswith("eigenvalues_volume")
+            or field_name.startswith("filter_values_volume")
+        ):
+            try:
+                batch[field_name] = torch.stack(
+                    [sample[field_name] for sample in sample_list]
+                )
+            except Exception as e:
+                print(f"Error stacking {field_name}: {e}")
+                for sample in sample_list:
+                    print(f"Sample {sample['file_index']} - seq_name: {sample['seq_name']}")
+                    for k,v in sample.items():
+                        print(f"{k}: {type(v)}")
+                raise e
         if field_name.startswith("flow_gt"):
             if all(field_name in x for x in sample_list):
                 batch[field_name] = torch.stack(

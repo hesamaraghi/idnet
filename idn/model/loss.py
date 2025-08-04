@@ -19,10 +19,10 @@ def sparse_l1(estimated, ground_truth, valid_mask=None):
     If all pixels are marked as False, the loss is equal to zero.
     Args:
         estimated: is tensor with predicted values of size
-                   batch_size x height x width.
+                   batch_size x 2 x height x width.
         ground_truth: is tensor with ground truth values of
-                      size batch_size x height x width. 
-        mask: mask of size batch_size x height x width. Only
+                      size batch_size x 2 x height x width. 
+        mask: mask of size batch_size x 1 x height x width. Only
               pixels with True values are used. If "valid_mask"
               is None, than we use all pixels.              
     """
@@ -49,10 +49,10 @@ def sparse_lnorm(order, estimated, ground_truth, valid_mask=None, per_frame=Fals
     If all pixels are marked as False, the loss is equal to zero.
     Args:
         estimated: is tensor with predicted values of size
-                   batch_size x height x width.
+                   batch_size x 2 x height x width.
         ground_truth: is tensor with ground truth values of
-                      size batch_size x height x width. 
-        mask: mask of size batch_size x height x width. Only
+                      size batch_size x 2 x height x width. 
+        mask: mask of size batch_size x 1 x height x width. Only
               pixels with True values are used. If "valid_mask"
               is None, than we use all pixels.              
     """

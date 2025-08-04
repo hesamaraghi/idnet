@@ -17,13 +17,20 @@ class IDEDEQIDO(nn.Module):
         self.input_flowmap = getattr(config, 'input_flowmap', False)
         self.pred_next_flow = getattr(config, 'pred_next_flow', False)
         self.add_eigenvalues = getattr(config, "add_eigenvalues", False)
+        self.add_filter_values = getattr(config, "add_filter_values", False)
         print(f"Using add_eigenvalues: {self.add_eigenvalues}")
+        print(f"Using add_filter_values: {self.add_filter_values}")
         self.num_bins = getattr(config, "num_voxel_bins", 15)
         print(f"Using num_bins: {self.num_bins}")
+        n_first_channels = 2
+        if self.add_eigenvalues:
+            n_first_channels += 1
+            if self.add_filter_values:
+                n_first_channels += 1
         self.fnet = LiteEncoder(
             output_dim=self.input_dim // 2,
             dropout=0,
-            n_first_channels=3 if self.add_eigenvalues else 2,
+            n_first_channels=n_first_channels,
             stride=2 if self.downsample == 8 else 1,
         )
         self.update_net = LiteUpdateBlock(
@@ -121,12 +128,16 @@ class IDEDEQIDO(nn.Module):
         deblur_iters = self.deblur_iters if deblur_iters is None else deblur_iters
         # x_old, x_new = event_bins["event_volume_old"], event_bins["event_volume_new"]
         x_raw = event_bins["event_volume_new"]
-
         B, V, H, W = x_raw.shape
-        if self.add_eigenvalues:
-            x_raw = x_raw.view(B, 3, V//3, H, W).permute(0, 2, 1, 3, 4)
-        # else:
-        #     x_raw = x_raw[:, :self.num_bins, :, :].unsqueeze(2)
+        if self.add_eigenvalues or self.add_filter_values:
+            x_raw = x_raw.view(B, 1, V, H, W)
+            if self.add_eigenvalues:
+                x_eigen = event_bins["eigenvalues_volume_new"].view(B, 2, V, H, W)
+                x_raw = torch.cat([x_raw, x_eigen], dim=1)
+            if self.add_filter_values:
+                x_filter = event_bins["filter_values_volume_new"].view(B, 1, V, H, W)
+                x_raw = torch.cat([x_raw, x_filter], dim=1)
+            x_raw = x_raw.permute(0, 2, 1, 3, 4)  # [B, V, H, W] -> [B, H, V, W]
         flow_total = torch.zeros(B, 2, H, W).to(
             x_raw.device) if flow_init is None else flow_init.clone()
 
@@ -140,14 +151,14 @@ class IDEDEQIDO(nn.Module):
         for iter in range(deblur_iters):
             if self.deblur:
                 x_deblur = self.deblur_tensor(x_deblur, delta_flow)
-                if not self.add_eigenvalues:
+                if not self.add_eigenvalues and not self.add_filter_values:
                     x = torch.stack([x_deblur, x_deblur], dim=1)
                 else:
                     x = x_deblur.permute(0, 2, 1, 3, 4)
                 x_deblur_history = torch.cat(
                     [x_deblur_history, x_deblur.unsqueeze(1)], dim=1)
             else:
-                if not self.add_eigenvalues:
+                if not self.add_eigenvalues and not self.add_filter_values:
                     x = torch.stack([x_raw, x_raw], dim=1)
                 else:
                     x = x_raw.permute(0, 2, 1, 3, 4)

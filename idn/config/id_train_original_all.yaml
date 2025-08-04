@@ -1,13 +1,13 @@
 deterministic: false
 track: false
-num_epoch: 100
+num_epoch: 150
 data_loader:
   common:
     num_voxel_bins: 15
   train:
     gpu: 0
     args:
-      batch_size: 3
+      batch_size: 5
   val:
     gpu: 0
     batch_freq: 1500
@@ -47,13 +47,8 @@ validation:
         test_root: ${dataset.common.test_root}
       representation_type: ${dataset.representation_type}
       train:
-        use_all_seqs: false
-        seq: [
-            zurich_city_02_d,
-            zurich_city_11_a,
-            zurich_city_08_a,
-            zurich_city_05_b
-          ]
+        use_all_seqs: true
+        seq: []
         add_eigenvalues: ${dataset.train.add_eigenvalues}
         add_filter_values: ${dataset.train.add_filter_values}
         tau: ${dataset.train.tau}
@@ -79,16 +74,16 @@ model:
 dataset:
   representation_type: voxel
   common:
-    data_root: data/
-    test_root: data/test/
+    data_root: /tmp/datasets/DSEC/
+    test_root: /tmp/datasets/DSEC/test/
   train:
-    add_eigenvalues: true
-    add_filter_values: true
+    add_eigenvalues: false
+    add_filter_values: false
     tau: 1000 
     filter_size: 5
-    in_memory: true
+    in_memory: false
     force_preprocess: false
-    do_not_save_preprocessed: true
+    do_not_save_preprocessed: false
 
 torch:
   debug_grad: false
@@ -97,7 +92,7 @@ torch:
 wandb:
   enabled: true
   project: "idnet"
-  run_name: "-subdataset-id-8x-1mS-5x5"
+  run_name: "original-all-id-8x-batch-5-epoch-150"
 
 defaults:
   - validation@_group_.nonrec: nonrec
