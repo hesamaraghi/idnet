@@ -394,6 +394,14 @@ class Sequence(Dataset):
             seq_name = seq_path.parts[-1]
             flow_path = seq_path.parents[1] / \
                 "train_optical_flow"/seq_name/'flow'
+            if not flow_path.is_dir():
+                print(f"Flow path {flow_path} does not exist. Cheking the data directory 'data' for the file ...")
+                flow_path = Path("data") / "train_optical_flow" / seq_name / 'flow'
+                if not flow_path.is_dir():
+                    raise FileNotFoundError(
+                        f"Flow path {flow_path} does not exist in the data directory.")
+                else:
+                    print(f"Using flow path {flow_path} from the data directory.")
             timestamp_file = flow_path/'forward_timestamps.txt'
             self.flow_png = [Path(os.path.join(flow_path / 'forward', img)) for img in sorted(
                 os.listdir(flow_path / 'forward'))]
@@ -436,6 +444,33 @@ class Sequence(Dataset):
         # Left events only
         ev_data_file = ev_dir_location / 'events.h5'
         ev_rect_file = ev_dir_location / 'rectify_map.h5'
+
+        if not ev_data_file.is_file():
+            print(f"Events file {ev_data_file} does not exist. Cheking the data directory 'data' for the file ...")
+            # find self.seq_name in the address of the data directory and replace the before ones with data
+            parts = ev_data_file.parts
+            idx = parts.index(self.seq_name)
+            ev_data_file = Path("data") 
+            ev_data_file = (ev_data_file / "test") if self.mode == "test" else (ev_data_file / "train_events")
+            ev_data_file = Path(ev_data_file, *parts[idx:])
+            if ev_data_file.is_file():
+                print(f"Found events file at {ev_data_file}")
+            else:
+                raise FileNotFoundError(
+                    f"Events file {ev_data_file} does not exist in the data directory.")
+        if not ev_rect_file.is_file():
+            print(f"Rectify map file {ev_rect_file} does not exist. Cheking the data directory 'data' for the file ...")
+            # find self.seq_name in the address of the data directory and replace the before ones with data
+            parts = ev_rect_file.parts
+            idx = parts.index(self.seq_name)
+            ev_rect_file = Path("data")
+            ev_rect_file = (ev_rect_file / "test") if self.mode == "test" else (ev_rect_file / "train_events")
+            ev_rect_file = Path(ev_rect_file, *parts[idx:])
+            if ev_rect_file.is_file():
+                print(f"Found rectify map file at {ev_rect_file}")
+            else:
+                raise FileNotFoundError(
+                    f"Rectify map file {ev_rect_file} does not exist in the data directory.")
 
         h5f_location = h5py.File(str(ev_data_file), 'r')
         self.h5f = h5f_location
@@ -923,6 +958,13 @@ def assemble_dsec_sequences(dataset_root, include_seq=None, exclude_seq=None, re
     representation_type = RepresentationType.VOXEL if representation_type == "voxel" else representation_type
     event_root = os.path.join(dataset_root, "train_events")
     flow_gt_root = os.path.join(dataset_root, "train_optical_flow")
+    
+    if not os.path.exists(flow_gt_root):
+        print(f"Events file {flow_gt_root} does not exist. Cheking the data directory 'data' for the file ...")
+        # find self.seq_name in the address of the data directory and replace the before ones with data
+        flow_gt_root = Path("data") 
+        flow_gt_root = flow_gt_root / "train_optical_flow"
+    
     available_seqs = os.listdir(
         flow_gt_root) if require_gt else os.listdir(event_root)
 
@@ -931,7 +973,6 @@ def assemble_dsec_sequences(dataset_root, include_seq=None, exclude_seq=None, re
         seqs = [seq for seq in seqs if seq in include_seq]
     if exclude_seq:
         seqs = [seq for seq in seqs if seq not in exclude_seq]
-
     # Prepare transform list
     transforms = dict()
     if config.downsample_ratio > 1:
@@ -977,7 +1018,7 @@ def assemble_dsec_sequences(dataset_root, include_seq=None, exclude_seq=None, re
         return seq_dataset
 
 
-def assemble_dsec_test_set(test_set_root, seq_len=None, concat_seq=False, representation_type=None):
+def assemble_dsec_test_set(test_set_root, seq_len=None, concat_seq=False, config=None, representation_type=None):
     if representation_type is None:
         representation_type = RepresentationType.VOXEL
         print("dsec test uses representation: voxel")
@@ -994,7 +1035,15 @@ def assemble_dsec_test_set(test_set_root, seq_len=None, concat_seq=False, repres
     for seq in test_seqs:
         dataset_cls = SequenceRecurrent if seq_len else Sequence
         extra_arg = dict(
-            sequence_length=seq_len) if dataset_cls == SequenceRecurrent else dict()
+            sequence_length=seq_len) if dataset_cls == SequenceRecurrent else dict(
+                add_eigenvalues=config.get("add_eigenvalues", False),
+                add_filter_values=config.get("add_filter_values", False),
+                tau=config.get("tau", None),
+                filter_size=config.get("filter_size", None),
+                in_memory=config.in_memory,
+                force_preprocess=config.force_preprocess,
+                do_not_save_preprocessed=config.do_not_save_preprocessed,
+            )
         seqs.append(dataset_cls(Path(test_set_root) / seq,
                                 representation_type, mode='test',
                                 load_gt=False, transforms=transforms, **extra_arg))
