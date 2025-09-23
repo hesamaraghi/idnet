@@ -13,6 +13,7 @@ from idn.loader.loader_dsec import (
     Sequence,
     RepresentationType,
     assemble_dsec_sequences,
+    assemble_dsec_test_set,
 )
 
 # Parse command-line arguments for HPC jobs
@@ -24,7 +25,14 @@ parser.add_argument("--end_idx", type=int, default=1, help="End index of dataset
 parser.add_argument(
     "--config_name", type=str, required=True, help="Name of the config file"
 )
+parser.add_argument("--data_root", type=str, default="data", help="Root directory for data")
+parser.add_argument("--test", action="store_true", help="Run in test mode with a small dataset")
+parser.add_argument("--test_set_root", type=str, default="data/test", help="Root directory for test set")
 args = parser.parse_args()
+
+# Conditional requirement check
+if args.test and not args.test_set_root:
+    parser.error("--test_set_root is required when --test is set")
 
 # Path to the directory where your config folder is
 config_dir = os.path.abspath("idn/config")  # or give full path
@@ -43,38 +51,43 @@ cfg.dataset.train.add_filter_values = True
 
 print(OmegaConf.to_yaml(cfg))
 
-train_seqs = [
-    val_seq
-    for x in cfg.get("validation", dict()).values()
-    for val_seq in x.dataset.train.seq
-]
-if train_seqs:
-    include_seq = train_seqs + [
+if args.test:
+    print(f"Using test set root: {args.test_set_root}")
+    dataset = assemble_dsec_test_set(
+        args.test_set_root,
+        seq_len=None,
+        concat_seq=True,
+        config=cfg.dataset.train,
+        representation_type=cfg.dataset.get("representation_type", None),
+    )
+else:
+    train_seqs = [
         val_seq
         for x in cfg.get("validation", dict()).values()
-        for val_seq in x.dataset.val.seq
+        for val_seq in x.dataset.train.seq
     ]
-else:
-    include_seq = []
+    if train_seqs:
+        include_seq = train_seqs + [
+            val_seq
+            for x in cfg.get("validation", dict()).values()
+            for val_seq in x.dataset.val.seq
+        ]
+    else:
+        include_seq = []
 
-
-dataset = assemble_dsec_sequences(
-    cfg.dataset.common.data_root,
-    include_seq=include_seq,
-    exclude_seq=None,
-    require_gt=True,
-    config=cfg.dataset.train,
-    representation_type=cfg.dataset.get("representation_type", None),
-    num_bins=cfg.dataset.get("num_voxel_bins", None),
-)
-
+    dataset = assemble_dsec_sequences(
+        args.data_root,
+        include_seq=include_seq,
+        exclude_seq=None,
+        require_gt=True,
+        config=cfg.dataset.train,
+        representation_type=cfg.dataset.get("representation_type", None),
+        num_bins=cfg.dataset.get("num_voxel_bins", None),
+    )
 
 datasets_len = len(dataset)
 
 print(f"The length of dataset: {datasets_len}")
-
-import argparse
-
 
 start_idx = args.start_idx
 end_idx = args.end_idx
@@ -97,10 +110,10 @@ for i in tqdm(range(start_idx, end_idx), desc="Processing samples"):
         sample = dataset[i]
         # Do your processing here
         if i % 10 == 0:
+            dataset_type_dir = "test" if args.test else "train_events"
             seq_path = (
-                Path(cfg.dataset.common.data_root) / "train_events" / sample["seq_name"]
+                Path(args.data_root) / dataset_type_dir / sample["seq_name"]
             )
-
             event_voxel_path = seq_path / "event_voxel"
             if not event_voxel_path.exists():
                 event_voxel_path.mkdir(parents=True, exist_ok=True)

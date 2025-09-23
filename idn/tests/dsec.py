@@ -77,6 +77,7 @@ def assemble_dsec_test_cls(test_type_name=None):
             test_set = assemble_dsec_test_set(self.spec.dataset.common.test_root,
                                               seq_len=self.spec.dataset.val.get(
                                                   "sequence_length", None),
+                                              config=self.spec.dataset.train,
                                               representation_type=self.spec.dataset.get("representation_type", None))
             if isinstance(test_set, list):
                 val_dataloader = [DataLoader(
