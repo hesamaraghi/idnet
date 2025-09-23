@@ -92,7 +92,8 @@ class Trainer(CallbackBridge):
                 include_seq=set(
                     [val_seq for x in self.config.get("validation", dict()).values() for val_seq in x.dataset.train.seq]),
                 exclude_seq=set(
-                    [val_seq for x in self.config.get("validation", dict()).values() for val_seq in x.dataset.val.seq]),
+                    [val_seq for x in self.config.get("validation", dict()).values() for val_seq in x.dataset.val.seq]) \
+                    if self.config.dataset.train.exclude_val else None,
                 require_gt=True,
                 config=self.config.dataset.train,
                 representation_type=self.config.dataset.get("representation_type", None),

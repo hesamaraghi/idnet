@@ -56,6 +56,7 @@ validation:
         in_memory: ${dataset.train.in_memory}
         force_preprocess: ${dataset.train.force_preprocess}
         do_not_save_preprocessed: ${dataset.train.do_not_save_preprocessed}
+        exclude_val: ${dataset.train.exclude_val}
       val:
         add_eigenvalues: ${dataset.train.add_eigenvalues}
         add_filter_values: ${dataset.train.add_filter_values}
@@ -74,8 +75,8 @@ model:
 dataset:
   representation_type: voxel
   common:
-    data_root: /tmp/datasets/DSEC/
-    test_root: /tmp/datasets/DSEC/test/
+    data_root: /tmp/maraghi/datasets/DSEC/
+    test_root: /tmp/maraghi/datasets/DSEC/test/
   train:
     add_eigenvalues: false
     add_filter_values: false
@@ -84,6 +85,7 @@ dataset:
     in_memory: false
     force_preprocess: false
     do_not_save_preprocessed: false
+    exclude_val: true
 
 torch:
   debug_grad: false
@@ -92,7 +94,7 @@ torch:
 wandb:
   enabled: true
   project: "idnet"
-  run_name: "original-all-id-8x-batch-5-epoch-150"
+  run_name: "-all-id-8x-1mS-5x5-batch-5-epoch-150"
 
 defaults:
   - validation@_group_.nonrec: nonrec
