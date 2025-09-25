@@ -11,3 +11,7 @@ logs
 saved_images
 ckpt_dir/*
 *.png
+dataset_cache
+.DS_Store
+*.pptx
+*.json
