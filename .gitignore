@@ -6,6 +6,7 @@ sbatch_folder
 slurm_output
 sbatch_history.txt
 wandb
+wandb_logs
 logs
 *.ckpt
 saved_images
@@ -15,3 +16,4 @@ dataset_cache
 .DS_Store
 *.pptx
 *.json
+lightning_logs

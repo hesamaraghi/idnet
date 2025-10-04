@@ -9,7 +9,7 @@ from utils.data_utils import (
 import torch
 
 
-def animate_events(events, transform, fig_size=None):
+def animate_events(events, transform, fig_size=None, invert_yaxis=False):
 
     if is_pyg_event_data(events):
         events = pyg2numpy_event_convertor(events)
@@ -35,7 +35,8 @@ def animate_events(events, transform, fig_size=None):
 
     # plt.axis("off")
     # plt.axis("tight")
-    # ax.invert_yaxis()
+    if invert_yaxis:
+        ax.invert_yaxis()
     def animate(frame):
         im.set_data(frame)
         return [im]
