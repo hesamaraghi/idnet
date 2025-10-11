@@ -351,7 +351,7 @@ class Sequence(Dataset):
 
         assert num_bins >= 1
         assert delta_t_ms == 100
-        assert seq_path.is_dir()
+        assert seq_path.is_dir(), f"{seq_path} is not a directory"
         assert mode in {'train', 'test'}
         '''
         Directory Structure:

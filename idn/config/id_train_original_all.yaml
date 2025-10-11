@@ -91,6 +91,8 @@ torch:
   debug_grad: false
   deterministic: false
 
+resume_ckpt: ${model.pretrain_ckpt}
+
 wandb:
   enabled: true
   project: "idnet"

@@ -43,11 +43,12 @@ class Trainer(CallbackBridge):
             print("Project:", config.wandb.project)
             print("Run name:", config.wandb.get("run_name", None))
 
-            wandb.init(project=config.wandb.project,
-                    name=config.wandb.get("run_name", None),
-                    config=OmegaConf.to_object(config),  # logs your full config
-                    resume="allow",
-                    )
+            wandb.init(
+                project=config.wandb.project,
+                name=config.wandb.get("run_name", None),
+                config=OmegaConf.to_object(config),  # logs your full config
+                resume="allow",
+            )
         
         self.model = model if model is not None else \
             get_model_by_name(config.model.name, config.model)
@@ -75,7 +76,6 @@ class Trainer(CallbackBridge):
         if config.get("resume_ckpt", None):
             resume_only_model = config.get("finetune", False)
             self.resume_from_ckpt(config.resume_ckpt, resume_only_model)
-            
         self.logger = self.configure_tracker()
         
         self.configure_callbacks(config.callbacks)
@@ -134,6 +134,7 @@ class Trainer(CallbackBridge):
                 raise ValueError("Invalid checkpoint")
     
     def resume_from_ckpt(self, ckpt, resume_only_model=False):
+        print(f"Resuming from checkpoint: {ckpt}, resume_only_model={resume_only_model}")
         ckpt = torch.load(ckpt, map_location='cpu')
         self.model.load_state_dict(ckpt['model_state_dict'])
         if not resume_only_model:
