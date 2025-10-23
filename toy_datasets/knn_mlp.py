@@ -161,6 +161,12 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         features = torch.cat(
             [data.pos[:, 0:2], data.pos[:, 0:2], data.pos[:, 0:1]], dim=1
         )
+    elif args.feature_type == "original_time_augmented":
+        features = data.pos
+    elif args.feature_type == "original_time_augmented_repeated_augmented":
+        features = torch.cat(
+            [data.pos, data.pos], dim=1
+        )
     elif args.feature_type == "eig":
         features = torch.cat([data.pos[:, 0:2], data["eig"]], dim=1)
     elif args.feature_type == "filter":
@@ -184,6 +190,10 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
             relative_feat_indices = [0, 1]
         elif args.feature_type == "original_repeated_augmented":
             relative_feat_indices = [0, 1, 2, 3, 4]
+        elif args.feature_type == "original_time_augmented":
+            relative_feat_indices = [0, 1, 2]
+        elif args.feature_type == "original_time_augmented_repeated_augmented":
+            relative_feat_indices = [0, 1, 2, 3, 4, 5]
         elif args.feature_type == "eig":
             relative_feat_indices = [0, 1]
         elif args.feature_type == "filter":
