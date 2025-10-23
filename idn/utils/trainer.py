@@ -69,21 +69,21 @@ class Trainer(CallbackBridge):
             else:
                 self.scheduler = None
 
-        self.epoch = 0
-        self.step = 0
-        self.batches_seen = 0
-        self.samples_seen = 0
-        if config.get("resume_ckpt", None):
-            resume_only_model = config.get("finetune", False)
-            self.resume_from_ckpt(config.resume_ckpt, resume_only_model)
-        self.logger = self.configure_tracker()
+            self.epoch = 0
+            self.step = 0
+            self.batches_seen = 0
+            self.samples_seen = 0
+            if config.get("resume_ckpt", None):
+                resume_only_model = config.get("finetune", False)
+                self.resume_from_ckpt(config.resume_ckpt, resume_only_model)
+            self.logger = self.configure_tracker()
         
-        self.configure_callbacks(config.callbacks)
+            self.configure_callbacks(config.callbacks)
 
-        self.execute_callbacks("on_init_end")
+            self.execute_callbacks("on_init_end")
         
-        if config.get("wandb", {}).get("enabled", False):
-            wandb.config.update(OmegaConf.to_object(config))
+            if config.get("wandb", {}).get("enabled", False):
+                wandb.config.update(OmegaConf.to_object(config))
 
     def configure_train_dataloader(self):
         if self.config.dataset.dataset_name == "dsec":
