@@ -173,6 +173,8 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         features = torch.cat([data.pos[:, 0:2], data["filter"]], dim=1)
     elif args.feature_type == "both":
         features = torch.cat([data.pos[:, 0:2], data["eig"], data["filter"]], dim=1)
+    elif args.feature_type == "both_time_augmented":
+        features = torch.cat([data.pos, data["eig"], data["filter"]], dim=1)
     elif args.feature_type == "eig_exclude_xy":
         features = data["eig"]
     elif args.feature_type == "filter_exclude_xy":
@@ -200,6 +202,8 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
             relative_feat_indices = [0, 1]
         elif args.feature_type == "both":
             relative_feat_indices = [0, 1]
+        elif args.feature_type == "both_time_augmented":
+            relative_feat_indices = [0, 1, 2]
         elif args.feature_type == "eig_exclude_xy":
             relative_feat_indices = []
         elif args.feature_type == "filter_exclude_xy":
