@@ -1,0 +1,109 @@
+deterministic: false
+track: false
+num_epoch: 500
+data_loader:
+  common:
+    num_voxel_bins: 15
+  train:
+    gpu: 0
+    args:
+      batch_size: 4
+  val:
+    gpu: 0
+    batch_freq: 1500
+loss:
+  final_prediction_nonseq:
+    loss_type: sparse_l1
+    weight: 1.0
+    seq_weight: avg
+    seq_norm: false
+
+optim:
+  optimizer: adam
+  scheduler: onecycle
+  lr: 1e-4
+
+callbacks:
+  logger:
+    enable:
+    log_keys:
+      batch_end:
+        - loss
+        - lr
+
+
+  validator:
+    enable:
+    frequency_type: step
+    frequency: 500
+    sanity_run_step: 3
+
+
+validation:
+  nonrec:
+    dataset:
+      common:
+        data_root: ${dataset.common.data_root}
+        test_root: ${dataset.common.test_root}
+      representation_type: ${dataset.representation_type}
+      train:
+        use_all_seqs: true
+        seq: []
+        add_eigenvalues: ${dataset.train.add_eigenvalues}
+        add_filter_values: ${dataset.train.add_filter_values}
+        tau: ${dataset.train.tau}
+        filter_size: ${dataset.train.filter_size}
+        in_memory: ${dataset.train.in_memory}
+        force_preprocess: ${dataset.train.force_preprocess}
+        do_not_save_preprocessed: ${dataset.train.do_not_save_preprocessed}
+        exclude_val: ${dataset.train.exclude_val}
+      val:
+        add_eigenvalues: ${dataset.train.add_eigenvalues}
+        add_filter_values: ${dataset.train.add_filter_values}
+        tau: ${dataset.train.tau}
+        filter_size: ${dataset.train.filter_size}
+        in_memory: ${dataset.train.in_memory}
+        force_preprocess: ${dataset.train.force_preprocess}      
+        do_not_save_preprocessed: ${dataset.train.do_not_save_preprocessed}
+
+model:
+  pretrain_ckpt: null
+  add_eigenvalues: ${dataset.train.add_eigenvalues}
+  add_filter_values: ${dataset.train.add_filter_values}
+  num_voxel_bins: ${data_loader.common.num_voxel_bins}
+  upsample: 'conv'
+
+dataset:
+  representation_type: voxel
+  common:
+    data_root: /tmp/maraghi/datasets/DSEC/
+    test_root: /tmp/maraghi/datasets/DSEC/test/
+  train:
+    add_eigenvalues: false
+    add_filter_values: false
+    tau: 1000 
+    filter_size: 5
+    in_memory: false
+    force_preprocess: false
+    do_not_save_preprocessed: false
+    exclude_val: true
+
+torch:
+  debug_grad: false
+  deterministic: false
+
+resume_ckpt: ${model.pretrain_ckpt}
+
+wandb:
+  enabled: true
+  project: "idnet"
+  run_name: "-all-id-4x-1mS-5x5-batch-4-epoch-500"
+
+defaults:
+  - validation@_group_.nonrec: nonrec
+  - hydra: custom_hydra
+  - data_loader_base
+  - torch_environ_base
+  - model: id-4x #id-8x
+  - dataset: dsec_augmentation
+  - _self_
