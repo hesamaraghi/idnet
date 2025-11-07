@@ -155,8 +155,7 @@ class TestMVSEC(Test):
         super().__init__(test_spec)
 
     def configure_dataloader(self):
-        valid_set = MVSEC("outdoor_day1", filter=(4356, 4706), num_bins=15, augment=False)
-
+        valid_set = MVSEC(config=self.spec.dataset, training=False, filter=(4356, 4706), augment=False)
         collate_fn = rec_train_collate if self.spec.dataset.val.get("recurrent", False) \
             else train_collate
         assert self.spec.data_loader.args.shuffle is False, \

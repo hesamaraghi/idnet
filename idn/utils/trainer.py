@@ -101,7 +101,7 @@ class Trainer(CallbackBridge):
             )
 
         elif self.config.dataset.dataset_name == "mvsec":
-            train_set = MVSEC("outdoor_day2", num_bins=self.config.dataset.get("num_voxel_bins", None), dt=None) #20Hz
+            train_set = MVSEC(config=self.config.dataset, training=True) #20Hz
         elif self.config.dataset.dataset_name == "mvsec_recurrent":
             train_set = MVSECRecurrent("outdoor_day2", augment=False, 
                                        sequence_length=self.config.dataset.train.sequence_length)

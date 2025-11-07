@@ -39,7 +39,7 @@ class EventSequenceToVoxelGrid_Pytorch(object):
         else:
             self.device = torch.device('cpu')
 
-    def __call__(self, event_sequence):
+    def __call__(self, event_sequence, val_type='p'):
         """
         Build a voxel grid with bilinear interpolation in the time domain from a set of events.
         :param events: a [N x 4] NumPy array containing one event per row in the form: [timestamp, x, y, polarity]
@@ -87,7 +87,8 @@ class EventSequenceToVoxelGrid_Pytorch(object):
             xs = events_torch[:, 1].long()
             ys = events_torch[:, 2].long()
             pols = events_torch[:, 3].float()
-            pols[pols == 0] = -1  # polarity should be +1 / -1
+            if val_type == 'p':
+                pols[pols == 0] = -1  # polarity should be +1 / -1
 
             tis = torch.floor(ts)
             tis_long = tis.long()
