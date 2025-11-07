@@ -18,3 +18,7 @@ dataset_cache
 *.json
 lightning_logs
 *.gif
+*/cache
+toy_datasets/outputs
+toy_datasets/config/remote.yaml
+paper
