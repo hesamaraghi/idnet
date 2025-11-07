@@ -1,0 +1,74 @@
+deterministic: false
+track: false
+num_epoch: 150
+run_val: false
+
+data_loader:
+  common:
+    num_voxel_bins: 15
+  train:
+    gpu: 0
+    args:
+      batch_size: 3
+      pin_memory: false
+      num_workers: 0
+      prefetch_factor: null
+  val:
+    gpu: 0
+    batch_freq: 1500
+    args:
+      num_workers: 0
+      prefetch_factor: null
+loss:
+  final_prediction_nonseq:
+    loss_type: sparse_l1
+    weight: 1.0
+    seq_weight: avg
+    seq_norm: false
+
+optim:
+  optimizer: adamw
+  scheduler: onecycle
+  lr: 1e-4
+
+callbacks:
+  logger:
+    enable:
+    log_keys:
+      batch_end:
+        - loss
+        - lr
+
+
+  validator:
+    enable:
+    frequency_type: step
+    frequency: 500
+    sanity_run_step: 3
+
+
+model:
+  pretrain_ckpt: null
+  add_eigenvalues: ${dataset.add_eigenvalues}
+  add_filter_values: ${dataset.add_filter_values}
+  num_voxel_bins: ${dataset.num_voxel_bins}
+
+torch:
+  debug_grad: false
+  deterministic: false
+
+resume_ckpt: ${model.pretrain_ckpt}
+
+# wandb:
+#   enabled: false
+#   project: "idnet"
+#   run_name: "-mvsec-outdoor2-1mS-5x5-batch-3-adamw-epoch-150"
+
+defaults:
+  - dataset: mvsec_base
+  - validation@_group_.mvsec: mvsec_day1
+  - hydra: custom_hydra
+  - data_loader_base
+  - torch_environ_base
+  - model: id-8x
+  - _self_

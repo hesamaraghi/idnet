@@ -1,4 +1,9 @@
-name: mvsec_day1
+defaults:
+  - /validation/data_loader_val_base@_here_
+  - /logger_base@_here_
+  - _self_
+
+name: ${dataset.dataset_name}_${dataset.val.seq}
 val_batch_freq: 1500
 data_loader:
   gpu: 0
@@ -7,7 +12,7 @@ data_loader:
     pin_memory: false
     shuffle: false
     num_workers: 0
-    prefetch_factor: 2
+    prefetch_factor: null
 
 
 logger:
@@ -16,7 +21,25 @@ logger:
     flow_gt_event_volume_new:
 
 dataset:
+  dataset_name: ${oc.select:dataset.dataset_name}
+  representation_type: ${oc.select:dataset.representation_type}
+  num_voxel_bins: ${oc.select:dataset.num_voxel_bins}
+  dt: ${oc.select:dataset.dt}
+  add_eigenvalues: ${oc.select:dataset.add_eigenvalues}
+  add_filter_values: ${oc.select:dataset.add_filter_values}
+  tau: ${oc.select:dataset.tau}
+  filter_size: ${oc.select:dataset.filter_size}
+  in_memory: ${oc.select:dataset.in_memory}
+  force_preprocess: ${oc.select:dataset.force_preprocess}
+  do_not_save_preprocessed: ${oc.select:dataset.do_not_save_preprocessed}
+  exclude_val: ${oc.select:dataset.exclude_val}
+  common:
+    data_root: ${oc.select:dataset.common.data_root}
+    test_root: ${oc.select:dataset.common.test_root}
+  train:
+    seq: ${oc.select:dataset.train.seq}
   val:
+    seq: ${oc.select:dataset.val.seq}
     recurrent: false
 
 
@@ -27,8 +50,4 @@ metrics:
     
 hydra:
   output_subdir: null
-
-defaults:
-  - /validation/data_loader_val_base@_here_
-  - /logger_base@_here_
   

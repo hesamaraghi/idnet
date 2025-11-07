@@ -1,0 +1,22 @@
+# Shared MVSEC dataset configuration
+# This file is referenced by both training and validation configs
+# Any changes here will automatically propagate to all configs that include it
+
+dataset_name: mvsec
+representation_type: null
+num_voxel_bins: 15
+dt: null
+add_eigenvalues: true
+add_filter_values: true
+tau: 1000 
+filter_size: 5
+in_memory: false
+force_preprocess: true
+do_not_save_preprocessed: true
+common:
+  data_root: data/MVSEC
+  test_root: data/MVSEC
+train:
+  seq: "outdoor_day2"
+val:
+  seq: "outdoor_day1"
