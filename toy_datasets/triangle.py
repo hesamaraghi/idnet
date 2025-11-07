@@ -1,3 +1,9 @@
+import sys
+import types
+
+# create fake mkl module
+sys.modules['mkl'] = types.ModuleType('mkl')
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
