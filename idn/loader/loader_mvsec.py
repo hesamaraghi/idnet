@@ -120,10 +120,11 @@ class MVSEC(Dataset):
             ('p', np.uint8),
         ]
         events = np.empty(x.shape[0], dtype=dtype)
-        events['x'] = x
-        events['y'] = y
-        events['t'] = t
-        events['p'] = p
+        events['x'] = x.astype(np.uint16)
+        events['y'] = y.astype(np.uint16)
+        t = (t - t.min()) * 1e6
+        events['t'] = t.astype(np.uint64)
+        events['p'] = (p > 0).astype(np.uint8)
         self.harris_recursive(events)
 
     def get_data_sample(self, idx):
