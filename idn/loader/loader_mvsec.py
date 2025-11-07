@@ -83,6 +83,11 @@ class MVSEC(Dataset):
             normalize=True,
             gpu=False,
         )
+        self.voxel_not_normalized = EventSequenceToVoxelGrid_Pytorch(
+            num_bins=self.num_bins,
+            normalize=False,
+            gpu=False,
+        )
         self.image_width, self.image_height = 346, 260
         self.cropper = T.CenterCrop((256, 256))
         self.augment = augment
@@ -166,24 +171,26 @@ class MVSEC(Dataset):
                 if self.add_eigenvalues:
                     eig1 = self.harris_recursive.eig1
                     eig2 = self.harris_recursive.eig2
-                    print(f"Eigenvalues computed for index {idx - 1} and sequence {self.seq_name}")
-                    print(f"Eigenvalue 1: min. {eig1.min()}, max. {eig1.max()}")
-                    print(f"Eigenvalue 2: min. {eig2.min()}, max. {eig2.max()}")
+                    print(f"Eigenvalues computed for index {idx - 1} and sequence {self.seq_name}\n"
+                          f"Eigenvalue 1: min. {eig1.min()}, max. {eig1.max()}\n"
+                          f"Eigenvalue 2: min. {eig2.min()}, max. {eig2.max()}", flush=True)
                     eig1_representation = \
-                        self.voxel(EventSequence(np.column_stack((t, x, y, eig1)),
+                        self.voxel_not_normalized(EventSequence(np.column_stack((t, x, y, eig1)),
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
                                     convert_to_relative=True,
-                                    features = events))
+                                    features=np.column_stack((t, x, y, eig1))),
+                            val_type='eig1')
             
                     eig2_representation = \
-                        self.voxel(EventSequence(np.column_stack((t, x, y, eig2)),
+                        self.voxel_not_normalized(EventSequence(np.column_stack((t, x, y, eig2)),
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
                                     convert_to_relative=True,
-                                    features = events))
+                                    features=np.column_stack((t, x, y, eig2))),
+                            val_type='eig2')
                     sample["eigenvalues_volume_new"] = torch.cat(
                         (
                             eig1_representation,
@@ -191,24 +198,26 @@ class MVSEC(Dataset):
                         ),
                         dim=0
                     )
-                    print(f"Voxel grid representation with eigenvalues for index {idx - 1} and sequence {self.seq_name}")
-                    print(f"Eigenvalue 1: min. {eig1_representation.min()}, max. {eig1_representation.max()}")
-                    print(f"Eigenvalue 2: min. {eig2_representation.min()}, max. {eig2_representation.max()}")   
-            
+                    print(f"Voxel grid representation with eigenvalues for index {idx - 1} and sequence {self.seq_name}\n"
+                          f"Eigenvalue 1 in voxel: min. {eig1_representation.min()}, max. {eig1_representation.max()}\n"
+                          f"Eigenvalue 2 in voxel: min. {eig2_representation.min()}, max. {eig2_representation.max()}", flush=True)
+
                 if self.add_filter_values:
                     filter_values = self.harris_recursive.filter_value_recursive
-                    print(f"Filter values computed for index {idx - 1} and sequence {self.seq_name}")
-                    print(f"Filter values: min. {filter_values.min()}, max. {filter_values.max()}")
+                    print(f"Filter values computed for index {idx - 1} and sequence {self.seq_name}\n"
+                          f"Filter values: min. {filter_values.min()}, max. {filter_values.max()}", flush=True)
                     sample["filter_values_volume_new"] = \
-                        self.voxel(EventSequence(np.column_stack((t, x, y, filter_values)),
+                        self.voxel_not_normalized(EventSequence(np.column_stack((t, x, y, filter_values)),
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
                                     convert_to_relative=True,
-                                    features = events))
-                    print(f"Voxel grid representation with filter values for index {idx - 1} and sequence {self.seq_name}")
-                    print(f"Filter values: min. {sample['filter_values_volume_new'].min()}, max. {sample['filter_values_volume_new'].max()}")
-          
+                                    features=np.column_stack((t, x, y, filter_values))),
+                            val_type='filter')
+
+                    print(f"Voxel grid representation with filter values for index {idx - 1} and sequence {self.seq_name}\n"
+                          f"Filter values in voxel: min. {sample['filter_values_volume_new'].min()}, max. {sample['filter_values_volume_new'].max()}", flush=True)
+
             # get flow
             flow = self.gt_flow[idx] # -1 yields the same gt flow as E-RAFT, but likely incorrect
             flow_next = self.gt_flow[idx+1]
@@ -255,19 +264,21 @@ class MVSEC(Dataset):
                     print(f"Eigenvalue 1: min. {eig1.min()}, max. {eig1.max()}")
                     print(f"Eigenvalue 2: min. {eig2.min()}, max. {eig2.max()}")
                     eig1_representation = \
-                        self.voxel(EventSequence(np.column_stack((t, x, y, eig1)),
+                        self.voxel_not_normalized(EventSequence(np.column_stack((t, x, y, eig1)),
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
                                     convert_to_relative=True,
-                                    features=new_events))
+                                    features=np.column_stack((t, x, y, eig1))),
+                            val_type='eig1')
                     eig2_representation = \
-                        self.voxel(EventSequence(np.column_stack((t, x, y, eig2)),
+                        self.voxel_not_normalized(EventSequence(np.column_stack((t, x, y, eig2)),
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
                                     convert_to_relative=True,
-                                    features=new_events))
+                                    features=np.column_stack((t, x, y, eig2))),
+                            val_type='eig2')
                     sample["eigenvalues_volume_new"] = torch.cat(
                         (
                             eig1_representation,
@@ -284,12 +295,13 @@ class MVSEC(Dataset):
                     print(f"Filter values computed for index {idx - 1} and sequence {self.seq_name}")
                     print(f"Filter values: min. {filter_values.min()}, max. {filter_values.max()}")
                     sample["filter_values_volume_new"] = \
-                        self.voxel(EventSequence(np.column_stack((t, x, y, filter_values)),
+                        self.voxel_not_normalized(EventSequence(np.column_stack((t, x, y, filter_values)),
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
                                     convert_to_relative=True,
-                                    features=new_events))
+                                    features=np.column_stack((t, x, y, filter_values))),
+                            val_type='filter')
                     print(f"Voxel grid representation with filter values for index {idx - 1} and sequence {self.seq_name}")
                     print(f"Filter values: min. {sample['filter_values_volume_new'].min()}, max. {sample['filter_values_volume_new'].max()}")
                     
