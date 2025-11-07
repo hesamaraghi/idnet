@@ -32,7 +32,6 @@ dataset:
   in_memory: ${oc.select:dataset.in_memory}
   force_preprocess: ${oc.select:dataset.force_preprocess}
   do_not_save_preprocessed: ${oc.select:dataset.do_not_save_preprocessed}
-  exclude_val: ${oc.select:dataset.exclude_val}
   common:
     data_root: ${oc.select:dataset.common.data_root}
     test_root: ${oc.select:dataset.common.test_root}

@@ -4,7 +4,7 @@
 
 dataset_name: mvsec
 representation_type: null
-num_voxel_bins: 15
+num_voxel_bins: 5
 dt: null
 add_eigenvalues: true
 add_filter_values: true
@@ -12,7 +12,7 @@ tau: 1000
 filter_size: 5
 in_memory: false
 force_preprocess: true
-do_not_save_preprocessed: true
+do_not_save_preprocessed: false
 common:
   data_root: data/MVSEC
   test_root: data/MVSEC
