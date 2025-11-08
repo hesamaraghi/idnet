@@ -34,9 +34,9 @@ class Validator:
         from ..tests import dsec as dsec_tests
         if test_name == "dsec":
             return dsec_tests.assemble_dsec_test_cls(test_type)
-        if test_name == "mvsec_day1":
+        if test_name == "mvsec_outdoor_day1":
             return dsec_tests.TestMVSEC
-        if test_name == "mvsec_day1_rec":
+        if test_name == "mvsec_outdoor_day1_rec":
             return dsec_tests.TestMVSECCO
         try:
             return getattr(dsec_tests, f"Test{test_name.upper()}")

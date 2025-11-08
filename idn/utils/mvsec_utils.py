@@ -22,10 +22,10 @@ class EventSequence(object):
         self.image_width = params['width']
         if not self.is_sorted():
             self.sort_by_timestamp()
-        if timestamp_multiplier is not None:
-            self.features[:,0] *= timestamp_multiplier
         if convert_to_relative:
             self.absolute_time_to_relative()
+        if timestamp_multiplier is not None:
+            self.features[:,0] *= timestamp_multiplier
 
     def get_sequence_only(self):
         return self.features
