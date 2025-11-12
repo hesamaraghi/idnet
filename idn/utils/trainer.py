@@ -122,7 +122,7 @@ class Trainer(CallbackBridge):
             raise NotImplementedError
 
     def resume_model_from_ckpt(self, ckpt):
-        ckpt = torch.load(ckpt)
+        ckpt = torch.load(ckpt, weights_only=False)
         if "model" in ckpt:
             self.model.load_state_dict(ckpt["model"])
         elif "model_state_dict" in ckpt:
@@ -135,7 +135,7 @@ class Trainer(CallbackBridge):
     
     def resume_from_ckpt(self, ckpt, resume_only_model=False):
         print(f"Resuming from checkpoint: {ckpt}, resume_only_model={resume_only_model}")
-        ckpt = torch.load(ckpt, map_location='cpu')
+        ckpt = torch.load(ckpt, map_location='cpu', weights_only=False)
         self.model.load_state_dict(ckpt['model_state_dict'])
         if not resume_only_model:
             self.optimizer.load_state_dict(ckpt['optimizer_state_dict'])
