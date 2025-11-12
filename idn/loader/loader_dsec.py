@@ -13,7 +13,7 @@ import numpy as np
 import os
 import imageio
 import hashlib
-import mkl
+# import mkl
 import torch
 from torchvision.transforms import ToTensor, RandomCrop
 from torchvision import transforms as tf
@@ -184,7 +184,7 @@ class EventSlicer:
         return idx_start, idx_end
 
     def ms2idx(self, time_ms: int) -> int:
-        assert time_ms >= 0
+        assert time_ms >= 0, f"time_ms must be non-negative, got {time_ms}"
         if time_ms >= self.ms_to_idx.size:
             return None
         return self.ms_to_idx[time_ms]
@@ -342,15 +342,21 @@ class Sequence(Dataset):
         in_memory=False,
         force_preprocess=False,
         do_not_save_preprocessed=False,
+        normalize_voxel=None,
     ):
 
         self.add_eigenvalues = add_eigenvalues
         self.add_filter_values = add_filter_values
         self.in_memory = in_memory
         self.force_preprocess = force_preprocess
+        self.do_not_save_preprocessed = do_not_save_preprocessed
+        
+        # Track which samples have been force-preprocessed in this session
+        # This allows force_preprocess to overwrite files once, then use them
+        self.force_preprocessed_indices = set()
 
         assert num_bins >= 1
-        assert delta_t_ms == 100
+        # assert delta_t_ms == 100
         assert seq_path.is_dir(), f"{seq_path} is not a directory"
         assert mode in {'train', 'test'}
         '''
@@ -421,18 +427,21 @@ class Sequence(Dataset):
         self.idx_to_visualize = file[:, 2] if file.shape[1] == 3 else []
 
         # Save output dimensions
-        self.height = 480
-        self.width = 640
+        self.height = 256 #TODO: get from config file
+        self.width = 256 #TODO: get from config file
         self.num_bins = num_bins
 
         # Just for now, we always train with num_bins=15
-        assert self.num_bins == 15
+        # assert self.num_bins == 15
 
         # Set event representation
         self.voxel_grid = None
         if representation_type == RepresentationType.VOXEL:
+            normalize_voxel = True if normalize_voxel is None else normalize_voxel
             self.voxel_grid = VoxelGrid(
                 (self.num_bins, self.height, self.width), normalize=True)
+            self.voxel_grid_aug = VoxelGrid(
+                (self.num_bins, self.height, self.width), normalize=normalize_voxel)
         if representation_type == "count":
             self.voxel_grid = "count"
         if representation_type == "pcount":
@@ -520,7 +529,7 @@ class Sequence(Dataset):
             'x': torch.from_numpy(x),
             'y': torch.from_numpy(y),
         }
-        return self.voxel_grid.convert(event_data_torch, val_type='val')
+        return self.voxel_grid_aug.convert(event_data_torch, val_type='val')
 
     def getHeightAndWidth(self):
         return self.height, self.width
@@ -580,9 +589,39 @@ class Sequence(Dataset):
         eigenvalues_names = ['eigenvalues_volume_old', 'eigenvalues_volume_new']
         filter_values_names = ['filter_values_volume_old', 'filter_values_volume_new']
         preprocessed_file_path = self.preprocessed_path / f"{index:05d}.pt"
-        if not self.force_preprocess and preprocessed_file_path.exists():
+        
+        # Determine whether to load from disk or preprocess
+        # Logic:
+        # 1. If force_preprocess=True and do_not_save_preprocessed=True: Always preprocess, never save/load
+        # 2. If force_preprocess=True and do_not_save_preprocessed=False: 
+        #    - First time seeing this index: Preprocess and overwrite existing file
+        #    - Subsequent times: Load from the newly saved file
+        # 3. If force_preprocess=False: Use saved file if exists, otherwise preprocess and save
+        should_load_from_disk = False
+        
+        if self.force_preprocess and self.do_not_save_preprocessed:
+            # Always preprocess from scratch, never use saved files
+            should_load_from_disk = False
+        elif self.force_preprocess and not self.do_not_save_preprocessed:
+            # Force preprocess mode: overwrite once, then use saved files
+            if index in self.force_preprocessed_indices:
+                # We've already preprocessed this index in this session, use the saved file
+                should_load_from_disk = True
+            else:
+                # First time seeing this index, force preprocess and overwrite
+                should_load_from_disk = False
+                # Mark this index as force-preprocessed
+                self.force_preprocessed_indices.add(index)
+        elif preprocessed_file_path.exists():
+            # Normal mode: file exists, load it
+            should_load_from_disk = True
+        else:
+            # Normal mode: file doesn't exist, need to preprocess
+            should_load_from_disk = False
+        
+        if should_load_from_disk:
             # print(f"Loading preprocessed data for index {index} for sequence {self.seq_name} from {preprocessed_file_path}")
-            loaded_file = torch.load(preprocessed_file_path)       
+            loaded_file = torch.load(preprocessed_file_path, weights_only=False)       
             if not self.add_eigenvalues and not self.add_filter_values:
                 loaded_file['event_volume_new'] = loaded_file['event_volume_new'][:self.num_bins,:,:]
             return loaded_file
@@ -1001,6 +1040,8 @@ def assemble_dsec_sequences(dataset_root, include_seq=None, exclude_seq=None, re
             config, "recurrent") and config.recurrent else Sequence
         extra_arg = dict(
             sequence_length=config.sequence_length) if dataset_cls == SequenceRecurrent else dict(        
+                num_bins=num_bins,
+                delta_t_ms=config.delta_t_ms if getattr(config, "delta_t_ms", None) is not None else 100,
                 add_eigenvalues=config.add_eigenvalues, 
                 add_filter_values=config.add_filter_values,
                 tau=config.tau,
@@ -1008,6 +1049,7 @@ def assemble_dsec_sequences(dataset_root, include_seq=None, exclude_seq=None, re
                 in_memory=config.in_memory,
                 force_preprocess=config.force_preprocess,
                 do_not_save_preprocessed=config.do_not_save_preprocessed,
+                normalize_voxel=config.get("normalize_voxel", None),
             )
         seq_dataset.append(dataset_cls(Path(event_root) / seq,
                            representation_type=representation_type, mode="train",
@@ -1036,6 +1078,8 @@ def assemble_dsec_test_set(test_set_root, seq_len=None, concat_seq=False, config
         dataset_cls = SequenceRecurrent if seq_len else Sequence
         extra_arg = dict(
             sequence_length=seq_len) if dataset_cls == SequenceRecurrent else dict(
+                # num_bins=num_bins, #TODO: num_bins handling
+                delta_t_ms=config.delta_t_ms if getattr(config, "delta_t_ms", None) is not None else 100,
                 add_eigenvalues=config.get("add_eigenvalues", False),
                 add_filter_values=config.get("add_filter_values", False),
                 tau=config.get("tau", None),
@@ -1043,6 +1087,7 @@ def assemble_dsec_test_set(test_set_root, seq_len=None, concat_seq=False, config
                 in_memory=config.in_memory,
                 force_preprocess=config.force_preprocess,
                 do_not_save_preprocessed=config.do_not_save_preprocessed,
+                normalize_voxel=config.get("normalize_voxel", None),
             )
         seqs.append(dataset_cls(Path(test_set_root) / seq,
                                 representation_type, mode='test',
