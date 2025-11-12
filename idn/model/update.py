@@ -83,3 +83,11 @@ class LiteUpdateBlock(nn.Module):
             return self.mask2(net)
         else:
             raise NotImplementedError
+
+class TinyUpdateBlock(LiteUpdateBlock):
+    def __init__(self, hidden_dim=16, input_dim=8, num_outputs=1, downsample=8):
+        super(TinyUpdateBlock, self).__init__(hidden_dim=hidden_dim, input_dim=input_dim, num_outputs=num_outputs, downsample=downsample)
+        self.mask = nn.Sequential(
+            nn.Conv2d(hidden_dim, 128, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, self.upsample_mask_dim*9, 1, padding=0))
