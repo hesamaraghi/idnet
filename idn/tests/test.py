@@ -29,6 +29,7 @@ class Test:
             config=self.spec.dataset.val,
             representation_type=self.spec.dataset.get(
                 "representation_type", None),
+            num_bins=self.spec.dataset.get("num_voxel_bins", None),     
         )
         collate_fn = rec_train_collate if self.spec.dataset.val.get("recurrent", False) \
             else train_collate
