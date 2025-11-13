@@ -87,6 +87,12 @@ class EventSlicer:
 
         if t_start_ms_idx is None or t_end_ms_idx is None:
             # Cannot guarantee window size anymore
+            print(f"t_start_us_idx: {t_start_ms_idx}, t_end_us_idx: {t_end_ms_idx}, "
+                  f"t_end_ms: {t_end_ms}, "
+                  f"max ts in events: {self.events['t'][-1]}, "
+                  f"len(ms_to_idx): {len(self.ms_to_idx)}, "
+                  f"max idx in ms_to_idx: {self.ms_to_idx[-1]}, "
+                  f"time of max in ms_to_idx: {self.events['t'][self.ms_to_idx[-1]]} ", flush=True)
             return None
 
         events = dict()
@@ -645,6 +651,16 @@ class Sequence(Dataset):
             for i in range(len(names)):
                 event_data = self.event_slicer.get_events(
                     ts_start[i], ts_end[i])
+
+                if event_data is None:
+                    raise ValueError(
+                        f"i is {i}. "
+                        f"Failed to get events for time window [{ts_start[i]}, {ts_end[i]}] us. "
+                        f"This usually means the requested time window is outside the available data range. "
+                        f"Sequence: {self.seq_name}, Index: {index}, "
+                        f"Time offset: {self.event_slicer.t_offset}, "
+                        f"Available time range: {self.event_slicer.events['t'][0]} to {self.event_slicer.events['t'][-1]} us"
+                    )
 
                 p = event_data['p']
                 t = event_data['t']

@@ -89,10 +89,10 @@ dataset:
     data_root: toy_datasets/data/star8
     test_root: toy_datasets/data/star8/test
   train:
-    add_eigenvalues: false
-    add_filter_values: false
-    tau: 1000 
-    filter_size: 5
+    add_eigenvalues: true
+    add_filter_values: true
+    tau: 30000 
+    filter_size: 7
     in_memory: true
     # Preprocessing behavior:
     # - force_preprocess=false: Use saved files if they exist, otherwise preprocess and save
@@ -100,8 +100,8 @@ dataset:
     #     Each sample is preprocessed and overwrites existing file on FIRST access in the session
     #     Subsequent accesses to the same sample use the newly saved file (efficient regeneration)
     # - force_preprocess=true + do_not_save_preprocessed=true: Always preprocess from scratch, never save/load
-    force_preprocess: false
-    do_not_save_preprocessed: false
+    force_preprocess: true
+    do_not_save_preprocessed: true
     exclude_val: true
     random_crop: null
     # - 192

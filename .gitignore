@@ -25,5 +25,5 @@ toy_datasets/data
 toy_datasets/visualizations
 toy_datasets/config/remote.yaml
 paper
-__ignore_*/
+__ignore_*
 ._.DS_Store
