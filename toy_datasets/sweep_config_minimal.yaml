@@ -15,45 +15,64 @@ metric:
 parameters:
   # Dataset parameters
   dataset_save_step:
-    values: [20, 40]  # Just 2 values
+    values: 
+      - 20 
+      - 40  # Just 2 values
   
   dataset_total_frames:
-    value: 2000
+    values: 
+      - 2000
   
   dataset_test_size:
-    value: 0.2
+    values: 
+      - 0.2
   
   dataset_base_name:
-    value: "star8"
+    values: 
+      - "star8"
   
   dataset_outdir:
-    value: "toy_datasets/data/star8"
+    values: 
+      - "toy_datasets/data/star8"
   
   # Training parameters
   training_num_bins:
-    values: [5, 10]  # Just 2 values
+    values: 
+      - 5 
+      - 15  # Just 2 values
   
   training_epochs:
-    value: 250  # Shorter training for quick results
+    values: 
+      - 50  # Shorter training for quick results
   
   training_seed:
-    value: 42
+    values: 
+      - 42 
+      - 420
   
   # Feature hyperparameters
   training_add_eigenvalues:
-    value: true  # Fixed
+    values:  
+      - false 
+      - true  # Fixed
   
   training_add_filter_values:
-    value: true  # Fixed
+    values: 
+      - false 
+      - true  # Fixed
   
   training_filter_size:
-    value: 7  # Fixed
+    values: 
+      - 5 
+      - 7  # Fixed
   
   training_tau:
-    values: [15000, 30000]  # Just 2 values
+    values: 
+      - 5000 
+      - 30000  # Just 2 values
 
 # This configuration creates:
-# 2 save_step × 2 num_bins × 2 tau = 8 experiments
+# 2 save_step × 2 num_bins × 2 seed × 2 add_eigenvalues × 2 add_filter_values × 2 filter_size × 2 tau = 128 runs
 #
 # Good for:
 # - Testing the sweep pipeline
