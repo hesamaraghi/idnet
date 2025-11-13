@@ -4,6 +4,7 @@ import os
 import torch
 import random
 import numpy as np
+from functools import cached_property
 from torch.utils.data import Dataset
 from torchvision import transforms as T
 from idn.utils.mvsec_utils import EventSequence
@@ -77,7 +78,6 @@ class MVSEC(Dataset):
             self.gt_flow = self.gt_flow[slice(*filter)]
 
         self.raw_gt_len = self.timestamps.shape[0]
-        self.event_ts_to_idx = self.build_event_idx()
         self.voxel = EventSequenceToVoxelGrid_Pytorch(
             num_bins=self.num_bins,
             normalize=True,
@@ -105,13 +105,17 @@ class MVSEC(Dataset):
             self.data = []
             print(f"Loading data for sequence {self.seq_name} into memory...")
             for i in tqdm(range(len(self))):
-                self.data.append(self[i])
+                self.data.append(self.get_data_sample(i))
         
         pass
 
     def __len__(self):
         return self.raw_gt_len - 2
 
+    @cached_property
+    def event_ts_to_idx(self):
+        return self.build_event_idx()
+    
     def get_eigenvalues(self, x, y, t, p):
         dtype = [
             ('x', np.uint16),
