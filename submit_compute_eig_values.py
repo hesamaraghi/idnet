@@ -87,8 +87,8 @@ def submit_jobs(data_root, chunk_size, submit_script, python_script, config_name
             f"--start_idx {str(start_idx)} "
             f"--end_idx {str(end_idx)} "
             f"--config_name {config_name} "
-            f"--test --test_set_root {test_set_root} " if test else ""
-        )
+        ) + \
+            (f"--test --test_set_root {test_set_root} " if test else "")
 
         print(f"Submitting job for indices {start_idx} to {end_idx}: {sbatch_command}")
         subprocess.call(sbatch_command, shell=True)
