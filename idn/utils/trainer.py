@@ -1,4 +1,5 @@
 import os
+import json
 import wandb
 import torch
 from torch.utils.data import DataLoader, ConcatDataset
@@ -32,11 +33,48 @@ from ..loader.loader_mvsec import (
 )
 
 
+def load_toy_dataset_metadata(data_root: str, seq_name: str):
+    """Load dataset metadata from JSON file for toy datasets.
+    
+    Args:
+        data_root: Root directory (e.g., 'toy_datasets/data/star8')
+        seq_name: Sequence name (e.g., 'star8' or 'star8_test')
+        
+    Returns:
+        dict: Metadata dictionary with generation parameters, or None if not found
+    """
+    metadata_path = os.path.join(data_root, "train_optical_flow", seq_name, "dataset_metadata.json")
+    if not os.path.exists(metadata_path):
+        return None
+    
+    try:
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        return metadata
+    except Exception as e:
+        print(f"Warning: Failed to load metadata from {metadata_path}: {e}")
+        return None
+
+
 class Trainer(CallbackBridge):
     def __init__(self, config, model=None):
         super().__init__()
         self.config = config
         config_torch(config.torch)
+        
+        # TODO: it should apply to torch not just like this
+        # Set random seed if provided via environment variable (for multi-seed experiments)
+        if 'TRAINING_SEED' in os.environ:
+            seed = int(os.environ['TRAINING_SEED'])
+            print(f"Setting random seed to {seed} for reproducibility")
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            import numpy as np
+            import random
+            np.random.seed(seed)
+            random.seed(seed)
+            # Note: For full determinism, also set torch.backends.cudnn.deterministic = True
+            # but this may impact performance
         
         if config.get("wandb", {}).get("enabled", False):
             print("Initializing Weights & Biases logging...")
@@ -49,6 +87,81 @@ class Trainer(CallbackBridge):
                 config=OmegaConf.to_object(config),  # logs your full config
                 resume="allow",
             )
+            
+            # Log dataset generation parameters from environment if available
+            # These are set by the generate_and_train.py wrapper for sweeps
+            if 'DATASET_GEN_SAVE_STEP' in os.environ:
+                wandb.config.update({
+                    'dataset_gen_save_step': int(os.environ['DATASET_GEN_SAVE_STEP']),
+                    'dataset_gen_total_frames': int(os.environ['DATASET_GEN_TOTAL_FRAMES']),
+                    'dataset_gen_test_size': float(os.environ['DATASET_GEN_TEST_SIZE']),
+                    'dataset_gen_variant_hash': os.environ['DATASET_GEN_VARIANT_HASH'],
+                }, allow_val_change=True)
+                print(f"✓ Logged dataset generation params to wandb:")
+                print(f"   save_step={os.environ['DATASET_GEN_SAVE_STEP']}")
+                print(f"   total_frames={os.environ['DATASET_GEN_TOTAL_FRAMES']}")
+                print(f"   variant_hash={os.environ['DATASET_GEN_VARIANT_HASH']}")
+            
+            #TODO: it should go through config and not with envs
+            # Log training seed if it was set
+            if 'TRAINING_SEED' in os.environ:
+                wandb.config.update({
+                    'training_seed': int(os.environ['TRAINING_SEED']),
+                }, allow_val_change=True)
+                print(f"✓ Logged training seed to wandb: {os.environ['TRAINING_SEED']}")
+            
+            # Load and log dataset metadata if available
+            # Collect all sequence names from train and val
+            train_seqs = []
+            val_seqs = []
+            
+            # Check if we're using all sequences
+            use_all_seqs = False
+            
+            # Collect sequences from validation config
+            for val_name, val_cfg in config.get("validation", {}).items():
+                if val_cfg and hasattr(val_cfg, "dataset"):
+                    if hasattr(val_cfg.dataset, "train"):
+                        # Check if use_all_seqs is enabled
+                        if hasattr(val_cfg.dataset.train, "use_all_seqs") and val_cfg.dataset.train.use_all_seqs:
+                            use_all_seqs = True
+                        elif hasattr(val_cfg.dataset.train, "seq"):
+                            train_seqs.extend(val_cfg.dataset.train.seq)
+                    
+                    if hasattr(val_cfg.dataset, "val") and hasattr(val_cfg.dataset.val, "seq"):
+                        val_seqs.extend(val_cfg.dataset.val.seq)
+            
+            # If use_all_seqs is enabled, scan the directory for all sequences
+            if use_all_seqs:
+                try:
+                    flow_gt_root = os.path.join(config.dataset.common.data_root, "train_optical_flow")
+                    if os.path.exists(flow_gt_root):
+                        all_seqs = os.listdir(flow_gt_root)
+                        # Filter out non-directory entries
+                        all_seqs = [seq for seq in all_seqs if os.path.isdir(os.path.join(flow_gt_root, seq))]
+                        train_seqs.extend(all_seqs)
+                        print(f"✓ Detected use_all_seqs=True, found sequences: {all_seqs}")
+                except Exception as e:
+                    print(f"Warning: Could not scan directory for sequences: {e}")
+            
+            # Try to load metadata for each sequence
+            dataset_metadata = {}
+            for seq_name in set(train_seqs + val_seqs):
+                metadata = load_toy_dataset_metadata(
+                    config.dataset.common.data_root, 
+                    seq_name
+                )
+                if metadata:
+                    dataset_metadata[f"dataset_metadata_{seq_name}"] = metadata
+                    print(f"✓ Loaded dataset metadata for sequence: {seq_name}")
+                    print(f"   save_step: {metadata.get('save_step')}, "
+                          f"total_frames: {metadata.get('total_frames')}, "
+                          f"image_size: {metadata.get('image_size')}")
+            
+            # Log metadata to wandb if any was found
+            if dataset_metadata:
+                wandb.config.update(dataset_metadata, allow_val_change=True)
+                print(f"✓ Logged metadata for {len(dataset_metadata)} sequences to Wandb")
         
         self.model = model if model is not None else \
             get_model_by_name(config.model.name, config.model)
