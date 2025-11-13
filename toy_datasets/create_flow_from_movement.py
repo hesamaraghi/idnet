@@ -4,8 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # ensure repo root on path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-sys.path.append("/data/idnet")
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(repo_root)
 
 from star8 import StarMovement  # StarMovement class (same API as ShapeMovementBase)
 
@@ -13,16 +13,37 @@ from star8 import StarMovement  # StarMovement class (same API as ShapeMovementB
 import imageio.v2 as imageio
 import h5py
 
-DEFAULT_OUTDIR = "/data/idnet/toy_datasets/data/star8"
+# Use relative path from script location instead of hardcoded absolute path
+DEFAULT_OUTDIR = os.path.join(os.path.dirname(__file__), "data", "star8")
 
 # default parameters (can be overridden via CLI)
 DEFAULT_TOTAL_FRAMES = 2_000
 DEFAULT_FRAME_TIME_US = 1_000  # time between frames in microseconds
 DEFAULT_IMAGE_SIZE = (256, 256)  # (H, W)
-DEFAULT_SAVE_STEP = 40          # optical flow from frame k to k+save_step
+DEFAULT_SAVE_STEP = 20          # optical flow from frame k to k+save_step
 DEFAULT_FLOW_DT_US = DEFAULT_FRAME_TIME_US * DEFAULT_SAVE_STEP  # e.g., 100_000 for 10 Hz
 DEFAULT_START_TS_US = 0          # synthetic start timestamp
 DEFAULT_SEQ_NAME = "star8"
+
+
+def generate_dataset_hash(**kwargs):
+    """Generate a short hash for dataset configuration to avoid conflicts in parallel generation.
+    
+    This function takes ALL parameters that affect the dataset generation and creates
+    a unique hash. If you add new parameters in the future, they will automatically
+    be included in the hash calculation.
+    
+    Args:
+        **kwargs: All dataset generation parameters (arbitrary key-value pairs)
+        
+    Returns:
+        str: 8-character hash of configuration
+    """
+    import hashlib
+    # Sort by key to ensure consistent ordering
+    config_str = str(sorted(kwargs.items()))
+    config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
+    return config_hash
 
 
 def load_dataset_metadata(data_root: str, seq_name: str):
@@ -145,7 +166,7 @@ def generate_sanity_check_figures(
     for idx, png_file in enumerate(png_files):
         frame_from = base_from + idx * save_step
         frame_to = frame_from + save_step
-        if frame_to > total_frames:
+        if frame_to >= total_frames:
             break
         
         # Get vertices at start and end
@@ -253,9 +274,12 @@ def create_dsec_events_h5(events_array, output_path, t_offset=0):
     
     # Build ms_to_idx mapping
     # ms_to_idx[ms] = index such that t[index] >= ms*1000 and t[index-1] < ms*1000
+    # We need one extra entry beyond the last millisecond to allow queries at the boundary
+    # E.g., if last event is at 1599000 us (1599 ms), we need ms_to_idx[1600] to be valid
     if len(t) > 0:
         max_time_us = t[-1]
-        max_time_ms = int(np.ceil(max_time_us / 1000.0)) + 1
+        # Convert to milliseconds and add 2: one for the current ms, one extra for boundary queries
+        max_time_ms = int(max_time_us / 1000) + 2
         
         ms_to_idx = np.zeros(max_time_ms, dtype=np.int64)
         
@@ -348,27 +372,39 @@ def build_star8_flow_and_events(
     ts_path_train = os.path.join(outdir, "train_optical_flow", seq_name, "flow", "forward_timestamps.txt")
     event_dir_train = os.path.join(outdir, "train_events", seq_name, "events", "left")
     
-    # Clean up existing dataset directories to prevent mixture of old and new data
+    # Check if dataset already exists (to prevent parallel runs from deleting each other's data)
     seq_flow_root = os.path.join(outdir, "train_optical_flow", seq_name)
     seq_event_root = os.path.join(outdir, "train_events", seq_name)
     
-    for path in [seq_flow_root, seq_event_root]:
-        if os.path.exists(path):
-            print(f"[cleanup] Removing existing data: {path}")
+    dataset_exists = os.path.exists(seq_flow_root) or os.path.exists(seq_event_root)
+    if dataset_exists:
+        # Check if metadata file exists to verify it's a complete dataset
+        metadata_path = os.path.join(outdir, "train_optical_flow", seq_name, "dataset_metadata.json")
+        if os.path.exists(metadata_path):
+            print(f"[skip] Dataset already exists at {outdir}/{seq_name}")
+            print(f"       If you want to regenerate, delete the directory manually or use a different variant.")
+            print(f"       This prevents parallel runs from deleting each other's data.")
+            # Return early with existing paths
+            return {
+                "flow_dir_train": flow_dir_train,
+                "timestamps_train": ts_path_train,
+                "events_h5_train": os.path.join(event_dir_train, "events.h5"),
+                "rectify_map_train": os.path.join(event_dir_train, "rectify_map.h5"),
+                "num_flow_pairs_train": 0,  # Don't know count without regenerating
+                "flow_dir_test": None,
+                "timestamps_test": None,
+                "events_h5_test": None,
+                "rectify_map_test": None,
+                "num_flow_pairs_test": 0,
+                "skipped": True,
+            }
+        else:
+            # Incomplete dataset, clean it up
+            print(f"[cleanup] Removing incomplete dataset: {seq_flow_root}")
             import shutil
-            shutil.rmtree(path)
-    
-    # Also clean up test sequence directories if test_size > 0
-    if test_size > 0:
-        seq_name_test = f"{seq_name}_test"
-        seq_flow_root_test = os.path.join(outdir, "train_optical_flow", seq_name_test)
-        seq_event_root_test = os.path.join(outdir, "train_events", seq_name_test)
-        
-        for path in [seq_flow_root_test, seq_event_root_test]:
-            if os.path.exists(path):
-                print(f"[cleanup] Removing existing test data: {path}")
-                import shutil
-                shutil.rmtree(path)
+            for path in [seq_flow_root, seq_event_root]:
+                if os.path.exists(path):
+                    shutil.rmtree(path)
 
     seq_name_test = f"{seq_name}_test" if test_size > 0 else None
     flow_dir_test = os.path.join(outdir, "train_optical_flow", seq_name_test, "flow", "forward") if seq_name_test else None
@@ -428,7 +464,7 @@ def build_star8_flow_and_events(
     idx_train = 0
     for frame_from in range(0, split_start_frame, save_step):
         frame_to = frame_from + save_step
-        if frame_to > split_start_frame:
+        if frame_to >= split_start_frame:
             break
         flows = star.compute_optical_flow_between_frames(all_coords, frame_from, frame_to)
         if flows is None:
@@ -470,7 +506,7 @@ def build_star8_flow_and_events(
     if test_size > 0 and seq_name_test:
         for frame_from in range(split_start_frame, total_frames, save_step):
             frame_to = frame_from + save_step
-            if frame_to > total_frames:
+            if frame_to >= total_frames:
                 break
             flows = star.compute_optical_flow_between_frames(all_coords, frame_from, frame_to)
             if flows is None:
@@ -562,8 +598,16 @@ def build_star8_flow_and_events(
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Generate synthetic star8 optical flow + events in DSEC layout (with optional train/test split)")
+    parser = argparse.ArgumentParser(
+        description="Generate synthetic star8 optical flow + events in DSEC layout (with optional train/test split)",
+        epilog="⚠️  WARNING: All directories in train_optical_flow/ are treated as sequences by the training loader!\n"
+               "For test/experimental datasets, use --outdir to specify a different directory (e.g., toy_datasets/data/experiments)\n"
+               "or clean up test sequences before training to avoid them being loaded as real datasets."
+    )
     parser.add_argument("--seq-name", default=DEFAULT_SEQ_NAME, help="Sequence name (directory name)")
+    parser.add_argument("--auto-name", action="store_true", default=False,
+                       help="Automatically append config hash to seq-name to avoid conflicts in parallel generation. "
+                            "Recommended for wandb sweeps with varying dataset parameters.")
     parser.add_argument("--total-frames", type=int, default=DEFAULT_TOTAL_FRAMES, help="Total frames to simulate")
     parser.add_argument("--image-width", type=int, default=DEFAULT_IMAGE_SIZE[1], help="Image width")
     parser.add_argument("--image-height", type=int, default=DEFAULT_IMAGE_SIZE[0], help="Image height")
@@ -571,7 +615,8 @@ if __name__ == "__main__":
     parser.add_argument("--frame-time-us", type=int, default=DEFAULT_FRAME_TIME_US, help="Microseconds between successive frames in synthetic timestamps")
     parser.add_argument("--flow-dt-us", type=int, default=DEFAULT_FLOW_DT_US, help="Time delta between forward flow pairs (e.g. 100000 for 10Hz)")
     parser.add_argument("--start-ts-us", type=int, default=DEFAULT_START_TS_US, help="Start timestamp offset (us)")
-    parser.add_argument("--outdir", default=DEFAULT_OUTDIR, help="Root output directory")
+    parser.add_argument("--outdir", default=DEFAULT_OUTDIR, 
+                       help="Root output directory. Use a separate directory (e.g., toy_datasets/data/experiments) for test datasets to avoid mixing with production data.")
     parser.add_argument("--face-color", default="black", help="Star fill color")
     parser.add_argument("--test-size", type=float, default=0.2, help="Fraction in (0,1) to reserve for test (suffix _test). Last part is test. Default 0.2")
     parser.add_argument("--sanity-check", action="store_true", default=True, help="Generate sanity check visualizations after dataset creation (default: True)")
@@ -580,19 +625,58 @@ if __name__ == "__main__":
     args = parser.parse_args()
     image_size = (args.image_height, args.image_width)
     
+    # Auto-calculate flow_dt_us from save_step if using default value
+    # This ensures flow timestamps match the actual frame spacing
+    if args.flow_dt_us == DEFAULT_FLOW_DT_US and args.save_step != DEFAULT_SAVE_STEP:
+        # User changed save_step but not flow_dt_us, so recalculate
+        args.flow_dt_us = args.save_step * args.frame_time_us
+        print(f"ℹ️  Auto-calculated flow_dt_us = {args.flow_dt_us} us (save_step={args.save_step} × frame_time_us={args.frame_time_us})")
+    
+    # Generate unique output directory if auto-name is enabled
+    # Instead of changing seq_name, we change the outdir to keep seq_name consistent
+    if args.auto_name:
+        config_hash = generate_dataset_hash(
+            total_frames=args.total_frames,
+            image_size=image_size,
+            save_step=args.save_step,
+            frame_time_us=args.frame_time_us,
+            flow_dt_us=args.flow_dt_us,
+            test_size=args.test_size,
+            start_ts_us=args.start_ts_us,
+            face_color=args.face_color,
+            # Add any other parameters that affect dataset generation
+            # This ensures future parameters are automatically included
+        )
+        # Use hash as subdirectory to keep datasets separate while maintaining consistent seq_name
+        outdir = os.path.join(args.outdir, f"variant_{config_hash}")
+        print(f"🔸 Auto-naming enabled: Using variant directory '{config_hash}'")
+        print(f"   Full path: {outdir}/{args.seq_name}")
+        print(f"   Config: total_frames={args.total_frames}, save_step={args.save_step}, test_size={args.test_size}")
+        print(f"   Note: Use --dataset_variant={config_hash} when training to specify this dataset")
+    else:
+        outdir = args.outdir
+        config_hash = None
+    
+    seq_name = args.seq_name  # Keep seq_name consistent
+    
     # Generate dataset
     result = build_star8_flow_and_events(
-        seq_name=args.seq_name,
+        seq_name=seq_name,
         total_frames=args.total_frames,
         image_size=image_size,
         save_step=args.save_step,
         frame_time_us=args.frame_time_us,
-        outdir=args.outdir,
+        outdir=outdir,
         start_ts_us=args.start_ts_us,
         flow_dt_us=args.flow_dt_us,
         face_color=args.face_color,
         test_size=args.test_size,
     )
+    
+    # Store config_hash in result for later use
+    if config_hash:
+        result['config_hash'] = config_hash
+        result['dataset_variant'] = f"variant_{config_hash}"
     
     # Run sanity checks if enabled
     if args.sanity_check:
@@ -601,10 +685,10 @@ if __name__ == "__main__":
         print("="*60)
         
         # Sanity check for train split
-        print(f"\n[SANITY CHECK] Train split: {args.seq_name}")
+        print(f"\n[SANITY CHECK] Train split: {seq_name}")
         n_train = generate_sanity_check_figures(
-            seq_name=args.seq_name,
-            outdir=args.outdir,
+            seq_name=seq_name,
+            outdir=outdir,
             image_size=image_size,
             total_frames=args.total_frames,
             save_step=args.save_step,
@@ -616,11 +700,11 @@ if __name__ == "__main__":
         
         # Sanity check for test split if it exists
         if args.test_size > 0:
-            seq_name_test = args.seq_name + "_test"
+            seq_name_test = seq_name + "_test"
             print(f"\n[SANITY CHECK] Test split: {seq_name_test}")
             n_test = generate_sanity_check_figures(
                 seq_name=seq_name_test,
-                outdir=args.outdir,
+                outdir=outdir,
                 image_size=image_size,
                 total_frames=args.total_frames,
                 save_step=args.save_step,
