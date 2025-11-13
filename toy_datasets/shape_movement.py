@@ -124,11 +124,123 @@ class ShapeMovementBase(ABC):
         relative_pos = pixels - position
 
         # Angular component: v = ω × r = angular_velocity * [-dy, dx]
-        angular_component = angular_velocity * np.stack([-relative_pos[:, 1], relative_pos[:, 0]], axis=-1)
+        angular_component = angular_velocity * np.stack(
+            [-relative_pos[:, 1], relative_pos[:, 0]], axis=-1
+        )
 
         flow = linear_velocity + angular_component
 
         return flow
+
+    def compute_optical_flow_between_frames(self, pixels, frame_from, frame_to):
+        """
+        Compute the displacement (optical flow) of shape points between two frames
+        by mapping rigid-body coordinates from frame_from to frame_to.
+
+        Only defined for points that lie inside the shape at frame_from. For
+        points outside the shape at frame_from the returned flow will be (np.nan, np.nan).
+
+        Args:
+            pixels: (N,2) array-like of (x, y) image coordinates
+            frame_from: int, source frame index
+            frame_to: int, target frame index
+
+        Returns:
+            Nx2 numpy array of displacements (dx, dy) as float32. Points outside
+            the shape at frame_from will have np.nan values.
+        """
+        pixels = np.asarray(pixels, dtype=float)
+
+        # Get rigid transform parameters for both frames
+        pos_from, rot_from, _, _ = self.trajectory_at(frame_from)
+        pos_to, rot_to, _, _ = self.trajectory_at(frame_to)
+
+        # Update path at source frame to test membership
+        self.update_shape(frame_from)
+        inside_mask = self.transformed_path.contains_points(pixels)
+
+        flows = np.full((len(pixels), 2), np.nan, dtype=np.float32)
+        if not np.any(inside_mask):
+            return flows
+
+        # Convert points inside the shape to local (object) coordinates at frame_from
+        # local = R(-rot_from) @ (p - pos_from)
+        cos_f, sin_f = np.cos(rot_from), np.sin(rot_from)
+        R_from_inv = np.array([[cos_f, sin_f], [-sin_f, cos_f]])
+
+        pts_inside = pixels[inside_mask]
+        rel = pts_inside - pos_from
+        local = rel @ R_from_inv.T
+
+        # Map local coordinates to frame_to: p_to = R(rot_to) @ local + pos_to
+        cos_t, sin_t = np.cos(rot_to), np.sin(rot_to)
+        R_to = np.array([[cos_t, -sin_t], [sin_t, cos_t]])
+        pts_to = local @ R_to.T + pos_to
+
+        displacement = pts_to - pts_inside
+        flows[inside_mask] = displacement.astype(np.float32)
+
+        return flows
+
+    def compute_optical_flow_every_n(self, N, pair_step=1):
+        """
+        Compute optical-flow (displacement) between frames separated by N for
+        pairs of frames across the full image grid.
+
+        The method computes the rigid mapping for pixels that belong to the
+        shape at the source frame. For such pixels the displacement is returned;
+        pixels outside the shape at the source frame are omitted.
+
+        Args:
+            N: int, number of frames between source and target (target = source + N)
+            pair_step: int, step between source frames to evaluate (default 1).
+
+        Returns:
+            A list of tuples (frame_from, frame_to, events) where events is a
+            structured numpy array with dtype:
+                [('x', int16), ('y', int16), ('t_from', int64), ('t_to', int64),
+                 ('v_x', float32), ('v_y', float32)]
+        """
+        img_height, img_width = self.image_size
+        yy, xx = np.meshgrid(np.arange(img_height), np.arange(img_width), indexing='ij')
+        all_coords = np.vstack([xx.ravel(), yy.ravel()]).T  # (H*W, 2)
+
+        results = []
+        last_source = self.total_frames - N
+        for frame_from in range(0, last_source + 1, pair_step):
+            frame_to = frame_from + N
+            if frame_to >= self.total_frames:
+                break
+
+            flows = self.compute_optical_flow_between_frames(all_coords, frame_from, frame_to)
+            valid = ~np.isnan(flows[:, 0])
+            if not np.any(valid):
+                continue
+
+            coords = all_coords[valid]
+            disp = flows[valid]
+
+            xs = coords[:, 0].astype(np.int16)
+            ys = coords[:, 1].astype(np.int16)
+            tfs = np.full(len(xs), frame_from, dtype=np.int64)
+            tts = np.full(len(xs), frame_to, dtype=np.int64)
+            vxs = disp[:, 0].astype(np.float32)
+            vys = disp[:, 1].astype(np.float32)
+
+            events = np.zeros(len(xs), dtype=[
+                ('x', np.int16), ('y', np.int16), ('t_from', np.int64), ('t_to', np.int64),
+                ('v_x', np.float32), ('v_y', np.float32)
+            ])
+            events['x'] = xs
+            events['y'] = ys
+            events['t_from'] = tfs
+            events['t_to'] = tts
+            events['v_x'] = vxs
+            events['v_y'] = vys
+
+            results.append((frame_from, frame_to, events))
+
+        return results
 
     def generate_events(self):
         """

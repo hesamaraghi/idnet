@@ -135,7 +135,7 @@ class MVSEC(Dataset):
         preprocessed_file_path = self.preprocessed_path / f"{idx:05d}.pt"
         if not self.force_preprocess and preprocessed_file_path.exists():
             # print(f"Loading preprocessed data for index {index} for sequence {self.seq_name} from {preprocessed_file_path}")
-            loaded_file = torch.load(preprocessed_file_path)       
+            loaded_file = torch.load(preprocessed_file_path, weights_only=False)       
             if not self.add_eigenvalues and not self.add_filter_values:
                 loaded_file['event_volume_new'] = loaded_file['event_volume_new'][:self.num_bins,:,:]
             return loaded_file

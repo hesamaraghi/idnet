@@ -124,3 +124,14 @@ class LiteEncoder(nn.Module):
             x = torch.split(x, [batch_dim, batch_dim], dim=0)
         return x
 
+class TinyEncoder(LiteEncoder):
+    def __init__(self, output_dim=16, stride=2, dropout=0.0, n_first_channels=1):
+        super(TinyEncoder, self).__init__(output_dim, stride, dropout, n_first_channels)
+
+    def _make_layer(self, dim, stride=1):
+        layer1 = ResidualBlock(self.in_planes, dim, 'none', stride=stride)
+        layer2 = nn.Identity() #ResidualBlock(dim, dim, 'none', stride=1)
+        layers = (layer1, layer2)
+
+        self.in_planes = dim
+        return nn.Sequential(*layers)

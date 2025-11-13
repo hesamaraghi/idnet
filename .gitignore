@@ -20,5 +20,10 @@ lightning_logs
 *.gif
 */cache
 toy_datasets/outputs
+toy_datasets/evaluations
+toy_datasets/data
+toy_datasets/visualizations
 toy_datasets/config/remote.yaml
 paper
+__ignore_*
+._.DS_Store

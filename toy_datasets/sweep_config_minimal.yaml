@@ -1,0 +1,61 @@
+# Minimal sweep for quick testing
+# Small parameter space to verify the pipeline works correctly
+# 
+# Usage:
+#   1. Create sweep: wandb sweep toy_datasets/sweep_config_minimal.yaml
+#   2. Run agents: wandb agent <sweep_id>
+
+program: toy_datasets/generate_and_train.py
+project: toydataset-minimal  # wandb project name
+method: grid
+metric:
+  name: val/epe
+  goal: minimize
+
+parameters:
+  # Dataset parameters
+  dataset_save_step:
+    values: [20, 40]  # Just 2 values
+  
+  dataset_total_frames:
+    value: 2000
+  
+  dataset_test_size:
+    value: 0.2
+  
+  dataset_base_name:
+    value: "star8"
+  
+  dataset_outdir:
+    value: "toy_datasets/data/star8"
+  
+  # Training parameters
+  training_num_bins:
+    values: [5, 10]  # Just 2 values
+  
+  training_epochs:
+    value: 250  # Shorter training for quick results
+  
+  training_seed:
+    value: 42
+  
+  # Feature hyperparameters
+  training_add_eigenvalues:
+    value: true  # Fixed
+  
+  training_add_filter_values:
+    value: true  # Fixed
+  
+  training_filter_size:
+    value: 7  # Fixed
+  
+  training_tau:
+    values: [15000, 30000]  # Just 2 values
+
+# This configuration creates:
+# 2 save_step × 2 num_bins × 2 tau = 8 experiments
+#
+# Good for:
+# - Testing the sweep pipeline
+# - Quick iteration during development
+# - Verifying all hyperparameters are passed correctly

@@ -5,5 +5,8 @@ def get_model_by_name(name, model_config):
     elif name == "IDEDEQIDO":
         from ..model.idedeq import IDEDEQIDO
         return IDEDEQIDO(model_config)
+    elif name == "TinyIDEDEQIDO":
+        from ..model.idedeq import TinyIDEDEQIDO
+        return TinyIDEDEQIDO(model_config)
     else:
         raise ValueError("Unknown model name: {}".format(name))

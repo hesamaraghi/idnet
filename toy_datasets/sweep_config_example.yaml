@@ -1,0 +1,92 @@
+# Example wandb sweep configuration for parallel dataset generation + training
+# 
+# Usage:
+#   1. Create sweep: wandb sweep toy_datasets/sweep_config_example.yaml
+#   2. Run agents: wandb agent <sweep_id>
+
+program: toy_datasets/generate_and_train.py
+project: toydataset-sweep  # wandb project name
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val/epe
+  goal: minimize
+
+parameters:
+  # Dataset generation parameters
+  dataset_save_step:
+    values: [20, 40, 60, 80, 100]
+  
+  dataset_total_frames:
+    values: [2000]
+  
+  dataset_test_size:
+    value: 0.2
+  
+  dataset_base_name:
+    value: "star8"
+  
+  dataset_outdir:
+    value: "toy_datasets/data/star8"
+  
+  # Training parameters
+  # NOTE: training_delta_t_ms is automatically calculated from dataset_save_step
+  # It equals: save_step * frame_time_us / 1000
+  # For save_step=20: delta_t_ms=20, for save_step=40: delta_t_ms=40, etc.
+  # DO NOT set training_delta_t_ms as a separate parameter - it's derived automatically
+  
+  training_num_bins:
+    values: [5, 10, 15]
+  
+  training_epochs:
+    value: 500
+  
+  # Random seed for reproducibility (useful for multi-seed experiments)
+  training_seed:
+    values: [42, 123, 456]  # Multiple seeds for statistical robustness
+  
+  # Feature extraction hyperparameters
+  # These control eigenvalue and filter value computation for enhanced event representation
+  training_add_eigenvalues:
+    values: [true, false]  # Add Harris corner eigenvalues as additional features
+  
+  training_add_filter_values:
+    values: [true, false]  # Add recursive filter values as additional features
+  
+  training_filter_size:
+    values: [5, 7]  # Harris corner detector filter kernel size (typically 5 or 7)
+  
+  training_tau:
+    values: [1000, 15000, 30000]  # Time constant for recursive filtering (microseconds)
+  
+  # Note: normalize_voxel is typically set in the base config and rarely swept
+  # If needed, add:
+  # training_normalize_voxel:
+  #   values: [true, false]
+
+# This configuration will create a grid search with:
+# 5 save_step × 1 total_frames × 3 num_bins × 3 seeds × 2 add_eigenvalues × 2 add_filter_values × 2 filter_size × 3 tau
+# = 5 × 1 × 3 × 3 × 2 × 2 × 2 × 3 = 2,160 different experiments
+#
+# To reduce the search space, consider:
+# 1. Fix some parameters (e.g., use single value instead of values list)
+# 2. Use method: random with a max_runs limit
+# 3. Use Bayesian optimization (method: bayes) to find optimal combinations efficiently
+#
+# Each experiment will:
+# 1. Generate a unique dataset (e.g., star8_a3f5b2c1, star8_d7e9f4a2, etc.)
+# 2. Train a model on that specific dataset
+# 3. Log results to wandb
+#
+# Key features:
+# - No conflicts between parallel agents (unique dataset names)
+# - Full reproducibility (metadata saved for each dataset)
+# - Easy to identify which dataset was used for which run
+#
+# IMPORTANT CONSTRAINT:
+# - delta_t_ms must be <= (dataset_save_step * frame_time_us / 1000)
+# - With default frame_time_us=1000 (1ms per frame):
+#   * save_step=20 → max delta_t_ms=20
+#   * save_step=40 → max delta_t_ms=40
+#   * save_step=60 → max delta_t_ms=60
+#   * etc.
+# - If delta_t_ms > flow_dt, you'll get "time_ms must be non-negative" errors

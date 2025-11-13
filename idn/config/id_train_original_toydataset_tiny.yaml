@@ -1,0 +1,133 @@
+deterministic: false
+track: false
+num_epoch: 500
+data_loader:
+  common:
+    num_voxel_bins: 5
+  train:
+    gpu: 0
+    args:
+      batch_size: 3
+  val:
+    gpu: 0
+    batch_freq: 30
+loss:
+  final_prediction_nonseq:
+    loss_type: sparse_l1
+    weight: 1.0
+    seq_weight: avg
+    seq_norm: false
+
+optim:
+  optimizer: adam
+  scheduler: onecycle
+  lr: 1e-4
+
+callbacks:
+  logger:
+    enable:
+    log_keys:
+      batch_end:
+        - loss
+        - lr
+
+
+  validator:
+    enable:
+    frequency_type: step
+    frequency: 30
+    sanity_run_step: 3
+
+
+validation:
+  nonrec:
+    dataset:
+      num_voxel_bins: ${data_loader.common.num_voxel_bins}    
+      dataset_name: ${dataset.dataset_name}
+      common:
+        data_root: ${dataset.common.data_root}
+        test_root: ${dataset.common.test_root}
+      representation_type: ${dataset.representation_type}
+      train:
+        use_all_seqs: true
+        seq: []
+        add_eigenvalues: ${dataset.train.add_eigenvalues}
+        add_filter_values: ${dataset.train.add_filter_values}
+        tau: ${dataset.train.tau}
+        filter_size: ${dataset.train.filter_size}
+        in_memory: ${dataset.train.in_memory}
+        force_preprocess: ${dataset.train.force_preprocess}
+        do_not_save_preprocessed: ${dataset.train.do_not_save_preprocessed}
+        exclude_val: ${dataset.train.exclude_val}
+        delta_t_ms: ${dataset.train.delta_t_ms}
+      val:
+        seq:
+        - ${dataset.val.seq[0]}
+        concat_seq: ${dataset.val.concat_seq}
+        add_eigenvalues: ${dataset.train.add_eigenvalues}
+        add_filter_values: ${dataset.train.add_filter_values}
+        tau: ${dataset.train.tau}
+        filter_size: ${dataset.train.filter_size}
+        in_memory: ${dataset.train.in_memory}
+        force_preprocess: ${dataset.train.force_preprocess}      
+        do_not_save_preprocessed: ${dataset.train.do_not_save_preprocessed}
+        delta_t_ms: ${dataset.train.delta_t_ms}
+
+model:
+  name: TinyIDEDEQIDO
+  hidden_dim: 32
+  pretrain_ckpt: null
+  add_eigenvalues: ${dataset.train.add_eigenvalues}
+  add_filter_values: ${dataset.train.add_filter_values}
+  num_voxel_bins: ${data_loader.common.num_voxel_bins}
+
+dataset:
+  dataset_name: dsec
+  representation_type: voxel
+  num_voxel_bins: ${data_loader.common.num_voxel_bins}
+  common:
+    data_root: toy_datasets/data/star8
+    test_root: toy_datasets/data/star8/test
+  train:
+    add_eigenvalues: true
+    add_filter_values: true
+    tau: 30000 
+    filter_size: 7
+    in_memory: true
+    # Preprocessing behavior:
+    # - force_preprocess=false: Use saved files if they exist, otherwise preprocess and save
+    # - force_preprocess=true + do_not_save_preprocessed=false: 
+    #     Each sample is preprocessed and overwrites existing file on FIRST access in the session
+    #     Subsequent accesses to the same sample use the newly saved file (efficient regeneration)
+    # - force_preprocess=true + do_not_save_preprocessed=true: Always preprocess from scratch, never save/load
+    force_preprocess: true
+    do_not_save_preprocessed: true
+    exclude_val: true
+    random_crop: null
+    # - 192
+    # - 192
+    delta_t_ms: null
+    normalize_voxel: true
+  val:
+    seq: 
+    - star8_test
+
+torch:
+  debug_grad: false
+  deterministic: false
+
+resume_ckpt: ${model.pretrain_ckpt}
+
+wandb:
+  enabled: true
+  project: "toydataset-tinyIDNet-multiseed"
+  run_name: "-id-tiny-8x-batch-3-epoch-100"
+
+defaults:
+  - validation@_group_.nonrec: nonrec
+  - hydra: custom_hydra
+  - data_loader_base
+  - torch_environ_base
+  - model: id-8x # id-4x
+  - dataset: dsec_augmentation
+  - _self_

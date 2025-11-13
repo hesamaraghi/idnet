@@ -1,0 +1,62 @@
+# Feature extraction hyperparameter sweep
+# Focus on eigenvalue and filter value configurations
+# 
+# Usage:
+#   1. Create sweep: wandb sweep toy_datasets/sweep_config_features.yaml
+#   2. Run agents: wandb agent <sweep_id>
+
+program: toy_datasets/generate_and_train.py
+project: toydataset-features  # wandb project name
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val/epe
+  goal: minimize
+
+parameters:
+  # Dataset generation parameters (fixed for this sweep)
+  dataset_save_step:
+    value: 40  # Fixed at 40ms intervals
+  
+  dataset_total_frames:
+    value: 2000
+  
+  dataset_test_size:
+    value: 0.2
+  
+  dataset_base_name:
+    value: "star8"
+  
+  dataset_outdir:
+    value: "toy_datasets/data/star8"
+  
+  # Training parameters
+  training_num_bins:
+    value: 10  # Fixed at 10 bins
+  
+  training_epochs:
+    value: 500
+  
+  training_seed:
+    value: 42  # Single seed for faster iteration
+  
+  # Feature extraction hyperparameters (MAIN FOCUS)
+  training_add_eigenvalues:
+    values: [true, false]
+  
+  training_add_filter_values:
+    values: [true, false]
+  
+  training_filter_size:
+    values: [5, 7]
+  
+  training_tau:
+    values: [1000, 15000, 30000]
+
+# This configuration creates:
+# 2 add_eigenvalues × 2 add_filter_values × 2 filter_size × 3 tau
+# = 24 experiments
+#
+# Combinations to explore:
+# - Eigenvalues only vs Filter values only vs Both vs Neither
+# - Small vs large filter size
+# - Fast (1ms) vs medium (15ms) vs slow (30ms) recursive filtering

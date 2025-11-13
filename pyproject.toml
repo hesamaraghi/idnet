@@ -8,6 +8,7 @@ dependencies = [
     "imageio>=2.37.0",
     "ipykernel>=7.1.0",
     "ipython>=9.6.0",
+    "ipywidgets>=8.1.8",
     "matplotlib>=3.10.7",
     "mkl>=2025.3.0",
     "omegaconf>=2.3.0",

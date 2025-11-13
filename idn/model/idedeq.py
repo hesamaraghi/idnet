@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 from torch.nn.functional import unfold, grid_sample, interpolate
 
-from .extractor import LiteEncoder
-from .update import LiteUpdateBlock
+from .extractor import LiteEncoder,TinyEncoder
+from .update import LiteUpdateBlock,TinyUpdateBlock
 
 from math import sqrt
 
@@ -307,3 +307,28 @@ class RecIDE(IDEDEQIDO):
         x["event_volume_new"] = -torch.flip(x["event_volume_new"], [1])
         back_flow = -super().forward(x)['final_prediction']
         return back_flow
+
+class TinyIDEDEQIDO(IDEDEQIDO):
+    def __init__(self, config):
+        super(TinyIDEDEQIDO, self).__init__(config)
+        self.input_dim = 16
+        n_first_channels = 2
+        if self.add_eigenvalues:
+            n_first_channels += 1
+            if self.add_filter_values:
+                n_first_channels += 1
+        self.fnet = TinyEncoder(
+            output_dim=self.input_dim // 2,
+            dropout=0,
+            n_first_channels=n_first_channels,
+            stride=2 if self.downsample == 8 else 1,
+        )
+        self.update_net = TinyUpdateBlock(
+            hidden_dim=self.hidden_dim, input_dim=self.input_dim,
+            num_outputs=2 if self.pred_next_flow else 1,
+            downsample=self.downsample)
+        if self.input_flowmap:
+            self.cnet = TinyEncoder(
+                output_dim=self.hidden_dim // 2, dropout=0, n_first_channels=2, stride=2 if self.downsample == 8 else 1)
+        else:
+            self.cnet = None
