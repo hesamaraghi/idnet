@@ -183,6 +183,8 @@ def main():
         tags += f",fsize_{args.training_filter_size}"
     if args.training_tau is not None:
         tags += f",tau_{args.training_tau}"
+    if args.training_normalize_voxel is not None:
+        tags += f",norm_{args.training_normalize_voxel}"
     
     # Note: We'll log dataset generation params via wandb config in the Trainer
     # For now, pass them as environment variables

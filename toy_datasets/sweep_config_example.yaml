@@ -58,14 +58,12 @@ parameters:
   training_tau:
     values: [1000, 15000, 30000]  # Time constant for recursive filtering (microseconds)
   
-  # Note: normalize_voxel is typically set in the base config and rarely swept
-  # If needed, add:
-  # training_normalize_voxel:
-  #   values: [true, false]
+  training_normalize_voxel:
+    values: [true, false]  # Normalize voxel grid representation
 
 # This configuration will create a grid search with:
-# 5 save_step × 1 total_frames × 3 num_bins × 3 seeds × 2 add_eigenvalues × 2 add_filter_values × 2 filter_size × 3 tau
-# = 5 × 1 × 3 × 3 × 2 × 2 × 2 × 3 = 2,160 different experiments
+# 5 save_step × 1 total_frames × 3 num_bins × 3 seeds × 2 add_eigenvalues × 2 add_filter_values × 2 filter_size × 3 tau × 2 normalize_voxel
+# = 5 × 1 × 3 × 3 × 2 × 2 × 2 × 3 × 2 = 4,320 different experiments
 #
 # To reduce the search space, consider:
 # 1. Fix some parameters (e.g., use single value instead of values list)

@@ -70,9 +70,13 @@ parameters:
     values: 
       - 5000 
       - 30000  # Just 2 values
+  
+  training_normalize_voxel:
+    values: 
+      - true 
+      - false  # Test both normalization modes
 
 # This configuration creates:
-# 2 save_step × 2 num_bins × 2 seed × 2 add_eigenvalues × 2 add_filter_values × 2 filter_size × 2 tau = 128 runs
 #
 # Good for:
 # - Testing the sweep pipeline

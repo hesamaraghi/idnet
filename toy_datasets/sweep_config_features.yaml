@@ -51,10 +51,13 @@ parameters:
   
   training_tau:
     values: [1000, 15000, 30000]
+  
+  training_normalize_voxel:
+    values: [true, false]
 
 # This configuration creates:
-# 2 add_eigenvalues × 2 add_filter_values × 2 filter_size × 3 tau
-# = 24 experiments
+# 2 add_eigenvalues × 2 add_filter_values × 2 filter_size × 3 tau × 2 normalize_voxel
+# = 48 experiments
 #
 # Combinations to explore:
 # - Eigenvalues only vs Filter values only vs Both vs Neither
