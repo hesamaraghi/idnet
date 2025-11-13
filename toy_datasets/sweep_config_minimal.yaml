@@ -51,9 +51,12 @@ parameters:
   
   training_tau:
     values: [15000, 30000]  # Just 2 values
+  
+  training_normalize_voxel:
+    values: [true, false]  # Test both normalization modes
 
 # This configuration creates:
-# 2 save_step × 2 num_bins × 2 tau = 8 experiments
+# 2 save_step × 2 num_bins × 2 tau × 2 normalize_voxel = 16 experiments
 #
 # Good for:
 # - Testing the sweep pipeline
