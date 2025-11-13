@@ -92,9 +92,14 @@ def visualize_predictions(
     total_frames: int = None,
     save_step: int = None,
     test_size: float = None,
+    require_metadata: bool = True,
 ):
     """
     Visualize predictions vs ground truth for a sequence.
+    
+    IMPORTANT: This function requires metadata to ensure visualization accuracy.
+    When datasets are regenerated with different parameters, the metadata must match
+    the actual dataset used for training/evaluation.
     
     Args:
         predictions_path: Path to predictions.pt file
@@ -107,6 +112,7 @@ def visualize_predictions(
         total_frames: Total frames in sequence (None to load from metadata)
         save_step: Frame step between flow pairs (None to load from metadata)
         test_size: Test split fraction (None to load from metadata)
+        require_metadata: If True, fail if metadata is missing (default: True for safety)
     """
     # Try to load metadata first
     metadata = load_dataset_metadata(data_root, seq_name)
@@ -117,22 +123,46 @@ def visualize_predictions(
         total_frames = total_frames or metadata['total_frames']
         save_step = save_step or metadata['save_step']
         test_size = test_size if test_size is not None else metadata['test_size']
-        print(f"   Using parameters from metadata:")
+        print(f"   ✓ Using parameters from metadata:")
         print(f"     image_size: {image_size}")
         print(f"     total_frames: {total_frames}")
         print(f"     save_step: {save_step}")
         print(f"     test_size: {test_size}")
+        
+        # Store metadata in output for reference
+        import json
+        metadata_out = os.path.join(output_dir, seq_name, split, "visualization_metadata.json")
+        ensure_dir(os.path.dirname(metadata_out))
+        with open(metadata_out, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        print(f"   ✓ Saved visualization metadata to {metadata_out}")
     else:
+        if require_metadata:
+            print(f"\n{'='*60}")
+            print(f"❌ ERROR: Metadata file not found for sequence '{seq_name}'")
+            print(f"   Location checked: {data_root}/train_optical_flow/{seq_name}/dataset_metadata.json")
+            print(f"\n   This is critical because:")
+            print(f"   - Dataset parameters (save_step, total_frames, etc.) affect visualization")
+            print(f"   - Using wrong parameters will misalign predictions with ground truth")
+            print(f"   - Multiple trainings may use datasets with different parameters")
+            print(f"\n   Solutions:")
+            print(f"   1. Regenerate the dataset to create metadata file")
+            print(f"   2. Manually provide parameters: --save_step X --total_frames Y --image_width W --image_height H")
+            print(f"   3. Set --no-require-metadata flag (NOT RECOMMENDED)")
+            print(f"{'='*60}\n")
+            raise FileNotFoundError(f"Metadata file required but not found for sequence '{seq_name}'")
+        
         # Fall back to provided parameters or defaults
         image_size = image_size or DEFAULT_IMAGE_SIZE
         total_frames = total_frames or DEFAULT_TOTAL_FRAMES
         save_step = save_step or DEFAULT_SAVE_STEP
         test_size = test_size if test_size is not None else DEFAULT_TEST_SIZE
-        print(f"   Using provided/default parameters:")
+        print(f"   ⚠️  WARNING: Using provided/default parameters (metadata not found):")
         print(f"     image_size: {image_size}")
         print(f"     total_frames: {total_frames}")
         print(f"     save_step: {save_step}")
         print(f"     test_size: {test_size}")
+        print(f"   ⚠️  Visualization may be incorrect if these don't match the actual dataset!")
     
     H, W = image_size
     
@@ -422,11 +452,49 @@ def main():
                        help="Save step (None to load from metadata)")
     parser.add_argument("--test_size", type=float, default=None,
                        help="Test size (None to load from metadata)")
+    parser.add_argument("--no-require-metadata", action="store_true",
+                       help="Don't fail if metadata is missing (NOT RECOMMENDED - may produce incorrect visualizations)")
     
     args = parser.parse_args()
     image_size = None
     if args.image_height is not None and args.image_width is not None:
         image_size = (args.image_height, args.image_width)
+    
+    require_metadata = not args.no_require_metadata
+    
+    # Try to load predictions file to get metadata
+    print(f"🔹 Loading predictions file: {args.predictions_path}")
+    try:
+        predictions_data = torch.load(args.predictions_path, map_location='cpu')
+        if "metadata" in predictions_data:
+            pred_metadata = predictions_data["metadata"]
+            print(f"   ✓ Found evaluation metadata in predictions file:")
+            print(f"     run_id: {pred_metadata.get('run_id', 'N/A')}")
+            print(f"     data_root: {pred_metadata.get('data_root', 'N/A')}")
+            print(f"     train_sequences: {pred_metadata.get('train_sequences', [])}")
+            print(f"     val_sequences: {pred_metadata.get('val_sequences', [])}")
+            
+            # Use metadata from predictions if not overridden by args
+            data_root = args.data_root if args.data_root != "/data/idnet/toy_datasets/data/star8" else pred_metadata.get('data_root', args.data_root)
+            
+            # Auto-detect sequence names
+            train_seqs = pred_metadata.get('train_sequences', [])
+            seq_name_train = args.seq_name_train if args.seq_name_train != "star8" else (train_seqs[0] if train_seqs else args.seq_name_train)
+            
+            val_seqs = pred_metadata.get('val_sequences', [])
+            seq_name_val = args.seq_name_val if args.seq_name_val != "star8_test" else (val_seqs[0] if val_seqs else args.seq_name_val)
+            
+            print(f"   ✓ Using: data_root={data_root}, train_seq={seq_name_train}, val_seq={seq_name_val}")
+        else:
+            print(f"   ⚠️  No metadata found in predictions file, using command line arguments")
+            data_root = args.data_root
+            seq_name_train = args.seq_name_train
+            seq_name_val = args.seq_name_val
+    except Exception as e:
+        print(f"   ⚠️  Could not load predictions file metadata: {e}")
+        data_root = args.data_root
+        seq_name_train = args.seq_name_train
+        seq_name_val = args.seq_name_val
     
     total_saved = 0
     
@@ -437,8 +505,8 @@ def main():
         print(f"{'='*60}")
         total_saved += visualize_predictions(
             predictions_path=args.predictions_path,
-            data_root=args.data_root,
-            seq_name=args.seq_name_train,
+            data_root=data_root,
+            seq_name=seq_name_train,
             output_dir=args.output_dir,
             split="train",
             max_samples=args.max_samples,
@@ -446,6 +514,7 @@ def main():
             total_frames=args.total_frames,
             save_step=args.save_step,
             test_size=args.test_size,
+            require_metadata=require_metadata,
         )
     
     # Visualize validation split
@@ -455,8 +524,8 @@ def main():
         print(f"{'='*60}")
         total_saved += visualize_predictions(
             predictions_path=args.predictions_path,
-            data_root=args.data_root,
-            seq_name=args.seq_name_val,
+            data_root=data_root,
+            seq_name=seq_name_val,
             output_dir=args.output_dir,
             split="val",
             max_samples=args.max_samples,
@@ -464,6 +533,7 @@ def main():
             total_frames=args.total_frames,
             save_step=args.save_step,
             test_size=args.test_size,
+            require_metadata=require_metadata,
         )
     
     print(f"\n{'='*60}")
