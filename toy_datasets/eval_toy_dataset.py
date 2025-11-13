@@ -93,6 +93,18 @@ def create_dataloaders(config):
     """
     Create train and validation dataloaders based on config.
     
+    IMPORTANT: This function explicitly forces preprocessing in memory for both
+    train and validation sets, regardless of the original config settings.
+    This is necessary because:
+    - Data may have changed since training (e.g., regenerated with different parameters)
+    - Evaluation should always use fresh preprocessing to match current data
+    - In-memory processing avoids conflicts with saved preprocessed files
+    
+    The following flags are enforced:
+    - in_memory: True (all preprocessing done in memory)
+    - force_preprocess: True (ignore any saved preprocessed files)
+    - do_not_save_preprocessed: True (don't save new preprocessed files)
+    
     Args:
         config: OmegaConf config object
         
@@ -133,12 +145,23 @@ def create_dataloaders(config):
     
     print(f"   Train sequences config: use_all_seqs={config.dataset.train.get('use_all_seqs', False)}")
     
+    # Force reprocessing in memory for evaluation (data may have changed)
+    # Create a copy of train config and explicitly set preprocessing flags
+    train_eval_config = OmegaConf.create(OmegaConf.to_container(config.dataset.train, resolve=True))
+    train_eval_config.in_memory = True
+    train_eval_config.force_preprocess = True
+    train_eval_config.do_not_save_preprocessed = True
+    
+    print(f"   Preprocessing config: in_memory={train_eval_config.in_memory}, "
+          f"force_preprocess={train_eval_config.force_preprocess}, "
+          f"do_not_save_preprocessed={train_eval_config.do_not_save_preprocessed}")
+    
     train_set = assemble_dsec_sequences(
         config.dataset.common.data_root,
         include_seq=set(train_sequences) if len(train_sequences) > 0 else None,
-        exclude_seq=set(val_sequences) if config.dataset.train.get("exclude_val", False) else None,
+        exclude_seq=set(val_sequences) if train_eval_config.get("exclude_val", False) else None,
         require_gt=True,
-        config=config.dataset.train,
+        config=train_eval_config,
         representation_type=config.dataset.get("representation_type", "voxel"),
         num_bins=config.dataset.get("num_voxel_bins", 5)
     )
@@ -164,6 +187,15 @@ def create_dataloaders(config):
         val_config.vertical_flip = 0.0
         val_config.load_gt = True  # Make sure GT is loaded
         val_config.concat_seq = True  # Always concatenate for evaluation
+        
+        # Force reprocessing in memory for evaluation (data may have changed)
+        val_config.in_memory = True
+        val_config.force_preprocess = True
+        val_config.do_not_save_preprocessed = True
+        
+        print(f"   Val preprocessing config: in_memory={val_config.in_memory}, "
+              f"force_preprocess={val_config.force_preprocess}, "
+              f"do_not_save_preprocessed={val_config.do_not_save_preprocessed}")
         
         val_set = assemble_dsec_sequences(
             config.dataset.common.data_root,
@@ -353,12 +385,34 @@ def main():
     
     out_path = os.path.join(save_dir, "predictions.pt")
     
+    # Collect sequence names for later visualization
+    train_sequences = []
+    if hasattr(config.dataset.train, "seq") and len(config.dataset.train.seq) > 0:
+        train_sequences = config.dataset.train.seq
+    
+    val_sequences = []
+    if "validation" in config:
+        for val_config in config.validation.values():
+            if "dataset" in val_config and "val" in val_config.dataset:
+                val_sequences.extend(val_config.dataset.val.get("seq", []))
+    if len(val_sequences) == 0 and "val" in config.dataset:
+        val_sequences = config.dataset.val.get("seq", [])
+    
     results = {
         "train": {
             "predictions": train_preds,
             "ground_truths": train_gts,
             "valid_masks": train_masks,
             "metrics": train_metrics,
+        },
+        "metadata": {
+            "run_path": args.run_path,
+            "run_id": run_id,
+            "data_root": config.dataset.common.data_root,
+            "train_sequences": train_sequences,
+            "val_sequences": val_sequences,
+            "representation_type": config.dataset.get("representation_type", "voxel"),
+            "num_voxel_bins": config.dataset.get("num_voxel_bins", 5),
         },
     }
     
@@ -375,6 +429,9 @@ def main():
     print(f"\n{'='*60}")
     print(f"✅ Evaluation completed!")
     print(f"   Results saved to: {out_path}")
+    print(f"   Metadata saved: data_root={config.dataset.common.data_root}")
+    print(f"   Train sequences: {train_sequences if train_sequences else 'all sequences'}")
+    print(f"   Val sequences: {val_sequences}")
     print(f"\nSummary:")
     print(f"  Train metrics: {train_metrics}")
     if val_metrics:
