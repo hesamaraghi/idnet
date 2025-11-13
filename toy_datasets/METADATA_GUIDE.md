@@ -31,6 +31,28 @@ Metadata is saved in both train and test sequence directories:
 - `data/star8/train_optical_flow/{seq_name}/dataset_metadata.json` (train split)
 - `data/star8/train_optical_flow/{seq_name}_test/dataset_metadata.json` (test split)
 
+## ⚠️ Important: Directory Management
+
+**Warning**: All directories in `train_optical_flow/` are treated as sequences by the training loader!
+
+When creating test or experimental datasets:
+- **Option 1 (Recommended)**: Use a separate output directory:
+  ```bash
+  python toy_datasets/create_flow_from_movement.py \
+      --seq-name my_test \
+      --outdir toy_datasets/data/experiments
+  ```
+  
+- **Option 2**: Clean up test sequences before training:
+  ```bash
+  rm -rf toy_datasets/data/star8/train_optical_flow/test_*
+  rm -rf toy_datasets/data/star8/train_events/test_*
+  ```
+
+- **Option 3**: Explicitly list sequences in config instead of using `use_all_seqs: true`
+
+If you accidentally create test sequences in the production directory, the training code will try to load them as real datasets, which may cause errors or unexpected behavior.
+
 ## How to Use
 
 ### Automatic Loading (Recommended)
