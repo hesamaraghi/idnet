@@ -464,7 +464,7 @@ def build_star8_flow_and_events(
     idx_train = 0
     for frame_from in range(0, split_start_frame, save_step):
         frame_to = frame_from + save_step
-        if frame_to >= split_start_frame:
+        if frame_to > split_start_frame:
             break
         flows = star.compute_optical_flow_between_frames(all_coords, frame_from, frame_to)
         if flows is None:
@@ -506,7 +506,7 @@ def build_star8_flow_and_events(
     if test_size > 0 and seq_name_test:
         for frame_from in range(split_start_frame, total_frames, save_step):
             frame_to = frame_from + save_step
-            if frame_to >= total_frames:
+            if frame_to > total_frames:
                 break
             flows = star.compute_optical_flow_between_frames(all_coords, frame_from, frame_to)
             if flows is None:

@@ -11,6 +11,16 @@ Each panel shows:
 - Red vertices/polyline: Object position at end frame  
 - Flow arrows: Optical flow vectors at vertex positions (green=GT, orange=predicted)
 
+## Key Features
+
+✅ **Automatic Metadata Loading**: Reads dataset parameters from `dataset_metadata.json`  
+✅ **Variant Directory Support**: Works with `variant_{hash}` dataset structure  
+✅ **Evaluation Metadata**: Auto-detects data_root and sequence names from predictions file  
+✅ **Safety Checks**: Requires metadata by default to prevent misaligned visualizations  
+✅ **Flexible Overrides**: Manual parameter specification when needed  
+✅ **Error Visualizations**: Generates EPE and Angular Error heatmaps with colorbars  
+✅ **Mask Visualizations**: Displays GT and prediction valid masks for verification  
+
 ## Usage
 
 ```bash
@@ -24,48 +34,121 @@ python toy_datasets/visualize_predictions.py --predictions_path <path_to_predict
 
 ### Optional Arguments
 
-- `--data_root`: Root directory of the dataset (default: `/data/idnet/data/star8`)
-- `--output_dir`: Directory to save visualization images (default: `visualizations`)
-- `--seq_name_train`: Training sequence name (default: `star8`)
-- `--seq_name_val`: Validation/test sequence name (default: `star8_test`)
+**Dataset Configuration:**
+- `--data_root`: Root directory of the dataset (default: **auto-detected from predictions metadata**)
+- `--seq_name_train`: Training sequence name (default: auto-detected or `star8`)
+- `--seq_name_val`: Validation/test sequence name (default: auto-detected or `star8_test`)
+
+**Visualization Options:**
+- `--output_dir`: Directory to save visualization images (default: `toy_datasets/visualizations`)
 - `--split`: Which split to visualize - `train`, `val`, or `both` (default: `both`)
 - `--max_samples`: Maximum samples per split to visualize (default: `None` for all)
-- `--image_width`, `--image_height`: Image dimensions (default: 256x256)
-- `--total_frames`: Total frames in sequence (default: 2000)
-- `--save_step`: Frame step between flow pairs (default: 20)
-- `--test_size`: Test split fraction (default: 0.2)
+- `--no-visualize-errors`: Skip generating EPE and AE error visualizations (default: errors enabled)
+- `--no-visualize-masks`: Skip generating mask visualizations (default: masks enabled)
+
+**Dataset Parameters (normally loaded from metadata):**
+- `--image_width`, `--image_height`: Image dimensions (default: from metadata or 256x256)
+- `--total_frames`: Total frames in sequence (default: from metadata or 2000)
+- `--save_step`: Frame step between flow pairs (default: from metadata or 40)
+- `--test_size`: Test split fraction (default: from metadata or 0.2)
+
+**Safety:**
+- `--no-require-metadata`: Allow visualization without metadata (⚠️ NOT RECOMMENDED - may produce incorrect visualizations)
 
 ## Examples
 
-### Visualize first 10 samples from both splits
+### Basic Usage (Recommended)
+
+The script automatically detects dataset parameters from metadata:
+
+```bash
+python toy_datasets/visualize_predictions.py \
+    --predictions_path evaluations/toydataset-tinyIDNet-multiseed/fxd5fk65/predictions.pt
+```
+
+This will:
+1. Load evaluation metadata from predictions file (data_root, sequence names)
+2. **Auto-detect data_root** from predictions metadata (e.g., `toy_datasets/data/star8/variant_e450c505`)
+3. Load dataset metadata from `dataset_metadata.json` (save_step, total_frames, etc.)
+4. Visualize both train and val splits
+5. Save to `toy_datasets/visualizations/`
+
+**Note**: The script automatically detects the correct dataset directory, including variant directories from parallel sweeps.
+
+### Visualize Specific Split with Limited Samples
 
 ```bash
 python toy_datasets/visualize_predictions.py \
     --predictions_path evaluations/toydataset-tinyIDNet-multiseed/fxd5fk65/predictions.pt \
-    --data_root data/star8 \
-    --output_dir visualizations \
-    --split both \
+    --split val \
     --max_samples 10
 ```
 
-### Visualize all training samples only
+### Working with Variant Directories
+
+For datasets in variant directories (from parallel sweeps), the script auto-detects the path:
+
+```bash
+python toy_datasets/visualize_predictions.py \
+    --predictions_path evaluations/toydataset-sweep/abc123/predictions.pt
+```
+
+The script will automatically:
+1. Read `data_root` from predictions metadata (e.g., `toy_datasets/data/star8/variant_e450c505`)
+2. Find metadata in: `toy_datasets/data/star8/variant_e450c505/train_optical_flow/star8/dataset_metadata.json`
+
+You can override the auto-detected path if needed:
+
+```bash
+python toy_datasets/visualize_predictions.py \
+    --predictions_path evaluations/toydataset-sweep/abc123/predictions.pt \
+    --data_root toy_datasets/data/star8/variant_different
+```
+
+### Custom Output Directory
 
 ```bash
 python toy_datasets/visualize_predictions.py \
     --predictions_path evaluations/toydataset-tinyIDNet-multiseed/fxd5fk65/predictions.pt \
-    --data_root data/star8 \
-    --split train
+    --output_dir my_custom_visualizations
 ```
 
-### Visualize validation samples with custom output directory
+### Skip Error Visualizations (Only Generate Comparison Images)
 
 ```bash
 python toy_datasets/visualize_predictions.py \
     --predictions_path evaluations/toydataset-tinyIDNet-multiseed/fxd5fk65/predictions.pt \
-    --data_root data/star8 \
-    --output_dir my_visualizations \
-    --split val
+    --no-visualize-errors
 ```
+
+### Only Generate Mask Visualizations (for debugging masks)
+
+```bash
+python toy_datasets/visualize_predictions.py \
+    --predictions_path evaluations/toydataset-tinyIDNet-multiseed/fxd5fk65/predictions.pt \
+    --no-visualize-errors \
+    --split val \
+    --max_samples 5
+```
+
+This is useful when you suspect mask issues and want to quickly check the valid regions.
+
+### Manual Parameter Override (if metadata is missing)
+
+⚠️ **Not recommended** - parameters may not match the actual dataset:
+
+```bash
+python toy_datasets/visualize_predictions.py \
+    --predictions_path evaluations/old_run/predictions.pt \
+    --data_root toy_datasets/data/star8 \
+    --save_step 40 \
+    --total_frames 2000 \
+    --image_width 256 \
+    --image_height 256 \
+    --no-require-metadata
+```
+
+**Note**: If predictions file has no metadata, you **must** provide `--data_root` manually, or the script will fail with an error.
 
 ## Output Structure
 
@@ -75,31 +158,273 @@ The script creates visualization images in the following structure:
 <output_dir>/
 ├── <seq_name_train>/
 │   └── train/
-│       ├── comparison_000000.png
+│       ├── comparison_000000.png          # 3-panel flow comparison
 │       ├── comparison_000001.png
-│       └── ...
+│       ├── ...
+│       ├── errors/                         # Error visualizations (if enabled)
+│       │   ├── errors_000000.png          # 2-panel EPE + AE heatmaps
+│       │   ├── errors_000001.png
+│       │   └── ...
+│       ├── masks/                          # Mask visualizations (if enabled)
+│       │   ├── masks_000000.png           # 3-panel mask comparison
+│       │   ├── masks_000001.png
+│       │   └── ...
+│       └── visualization_metadata.json    # Copy of dataset metadata
 └── <seq_name_val>/
     └── val/
         ├── comparison_000000.png
         ├── comparison_000001.png
-        └── ...
+        ├── ...
+        ├── errors/
+        │   ├── errors_000000.png
+        │   ├── errors_000001.png
+        │   └── ...
+        ├── masks/
+        │   ├── masks_000000.png
+        │   ├── masks_000001.png
+        │   └── ...
+        └── visualization_metadata.json
 ```
 
-## Color Coding
+### Output Files
 
-- **Blue**: Start frame vertices and polyline
-- **Red**: End frame vertices and polyline
+The script organizes visualizations into separate subdirectories for better file management:
+
+```
+visualizations/star8/
+├── train/
+│   ├── comparisons/          # Flow comparison visualizations
+│   │   ├── comparison_000000.png
+│   │   ├── comparison_000001.png
+│   │   └── ...
+│   ├── errors/               # Error heatmaps
+│   │   ├── errors_000000.png
+│   │   ├── errors_000001.png
+│   │   └── ...
+│   ├── masks/                # Mask validation visualizations
+│   │   ├── masks_000000.png
+│   │   ├── masks_000001.png
+│   │   └── ...
+│   └── visualization_metadata.json
+└── val/
+    ├── comparisons/
+    ├── errors/
+    └── masks/
+```
+
+**Comparison Images** (`comparisons/comparison_XXXXXX.png`):
+- 3 side-by-side panels showing GT flow, predicted flow, and overlay
+- Blue vertices: Object position at start frame
+- Red vertices: Object position at end frame
+- Green arrows: Ground truth flow vectors
+- Orange arrows: Predicted flow vectors
+
+**Error Images** (`errors/errors_XXXXXX.png`):
+- 2x3 grid layout with comprehensive flow and error analysis:
+  - **Row 1**: Ground truth flow (color-coded), Predicted flow (color-coded), Flow color wheel (reference)
+  - **Row 2**: EPE heatmap, Angular Error heatmap, Error statistics
+- Flow color wheel shows direction→color mapping (HSV: hue=angle, saturation=magnitude)
+- Hot colormap for errors: Dark (low error) → Bright red/yellow (high error)
+- White/Cyan circles: Vertex positions for spatial reference
+- Detailed statistics panel with mean, median, std, min, max for both EPE and AE
+
+**Mask Images** (`masks/masks_XXXXXX.png`):
+- 3 side-by-side panels showing mask validation
+- **Left panel**: Ground truth valid mask (white=valid, black=invalid)
+- **Middle panel**: Prediction valid mask (white=valid, black=invalid)
+- **Right panel**: Mask comparison (RGB overlay)
+  - **Green**: Valid in both GT and predictions
+  - **Red**: Valid in GT only (missing in predictions)
+  - **Blue**: Valid in predictions only (shouldn't have flow here)
+- Yellow circles: Vertex positions for spatial reference
+- Pixel counts and percentages in titles
+
+The `visualization_metadata.json` file stores the dataset parameters used for visualization, ensuring reproducibility.
+
+## Metadata Integration
+
+### Automatic Detection Flow
+
+1. **Load predictions file** → Extract evaluation metadata (data_root, sequence names)
+2. **Locate dataset directory** → Find variant directory if applicable
+3. **Load dataset metadata** → Read `dataset_metadata.json` for generation parameters
+4. **Verify parameters** → Ensure consistency between dataset and visualization
+5. **Generate visualizations** → Create comparison images with correct alignment
+
+### Metadata File Locations
+
+For standard datasets:
+```
+toy_datasets/data/star8/train_optical_flow/star8/dataset_metadata.json
+```
+
+For variant datasets (from sweeps):
+```
+toy_datasets/data/star8/variant_e450c505/train_optical_flow/star8/dataset_metadata.json
+```
+
+### What If Metadata Is Missing?
+
+**Recommended:** Regenerate the dataset to create metadata:
+```bash
+python toy_datasets/create_flow_from_movement.py \
+    --seq-name star8 \
+    --auto-name \
+    --save-step 40 \
+    --total-frames 2000
+```
+
+**Fallback:** Provide parameters manually (may be incorrect):
+```bash
+python toy_datasets/visualize_predictions.py \
+    --predictions_path path/to/predictions.pt \
+    --save_step 40 \
+    --total_frames 2000 \
+    --image_width 256 \
+    --image_height 256 \
+    --no-require-metadata
+```
+
+## Color Coding Guide
+
+### Comparison Visualizations (3-panel images)
+
+- **Blue**: Start position vertices (frame t)
+- **Red**: End position vertices (frame t + Δt)
 - **Green arrows**: Ground truth optical flow vectors
 - **Orange arrows**: Predicted optical flow vectors
 
+All three panels share the same coordinate system for easy comparison:
+- **Left panel**: Ground truth flow only
+- **Middle panel**: Predicted flow only  
+- **Right panel**: Both overlaid for direct comparison
+
+### Error Visualizations (2-panel heatmaps)
+
+**End Point Error (EPE) - Left Panel:**
+- **Hot colormap**: Dark (0 px error) → Red/Yellow (high error)
+- **Colorbar**: Shows error magnitude in pixels
+- **Cyan circles**: Vertex positions for spatial reference
+- **Title**: Displays mean EPE over valid pixels
+
+**Angular Error (AE) - Right Panel:**
+- **Hot colormap**: Dark (0° error) → Red/Yellow (high angular deviation)
+- **Colorbar**: Shows error magnitude in degrees
+- **Cyan circles**: Vertex positions for spatial reference
+- **Title**: Displays mean AE over valid pixels
+
+**Error Metrics:**
+- **EPE**: Euclidean distance between predicted and GT flow vectors
+  - Formula: `sqrt((u_pred - u_gt)² + (v_pred - v_gt)²)`
+- **Angular Error**: Angle between flow vectors in 3D homogeneous space
+  - Formula: `arccos((u_pred*u_gt + v_pred*v_gt + 1) / sqrt((u_pred² + v_pred² + 1) * (u_gt² + v_gt² + 1)))`
+  - Uses `(u, v, 1)` formulation (standard in optical flow benchmarks like Middlebury, KITTI)
+  - More numerically stable than 2D formulation for small flows
+
+### Mask Visualizations (3-panel images)
+
+**GT Valid Mask - Left Panel:**
+- **Grayscale**: White (valid) → Black (invalid)
+- **Colorbar**: Shows binary valid/invalid mapping
+- **Yellow circles**: Vertex positions overlay
+- **Title**: Shows valid pixel count and percentage
+
+**Prediction Valid Mask - Middle Panel:**
+- **Grayscale**: White (valid) → Black (invalid)
+- **Colorbar**: Shows binary valid/invalid mapping
+- **Yellow circles**: Vertex positions overlay
+- **Title**: Shows valid pixel count and percentage
+
+**Mask Comparison - Right Panel:**
+- **Green pixels**: Valid in both GT and predictions (correct)
+- **Red pixels**: Valid in GT but not in predictions (missing predictions)
+- **Blue pixels**: Valid in predictions but not in GT (extra predictions - may indicate issues)
+- **Black pixels**: Invalid in both (background)
+- **Yellow circles**: Vertex positions overlay
+- **Title**: Shows pixel counts for each category
+
+**What to look for:**
+- ✅ **Mostly green**: Good agreement between GT and prediction masks
+- ⚠️ **Red regions**: Model failed to predict flow in valid GT regions
+- ⚠️ **Blue regions**: Model predicted flow where GT says invalid (potential mask error!)
+- Check if vertices fall in valid (green/red) or invalid (black/blue) regions
+
 ## Requirements
 
-- Predictions file generated by `eval_toy_dataset.py`
+- Predictions file generated by `eval_toy_dataset.py` (with evaluation metadata)
 - Dataset ground truth flows in DSEC format
+- Dataset metadata file (`dataset_metadata.json`) in dataset directory
 - StarMovement class for vertex extraction
+
+## Common Issues & Solutions
+
+### Issue: "No data_root found in predictions metadata"
+
+**Cause:** Predictions file was generated before metadata support was added to `eval_toy_dataset.py`.
+
+**Solution:** Re-run evaluation with current version to save metadata:
+```bash
+python toy_datasets/eval_toy_dataset.py --run_path entity/project/run_id
+```
+
+Or provide `--data_root` manually (but ensure it matches the training data).
+
+### Issue: "Metadata file not found"
+
+**Cause:** Dataset was generated before metadata support was added, or metadata file is missing.
+
+**Solution:** Regenerate the dataset with current version:
+```bash
+python toy_datasets/create_flow_from_movement.py \
+    --seq-name star8 \
+    --auto-name \
+    --save-step <your_save_step> \
+    --total-frames <your_total_frames>
+```
+
+### Issue: "Visualizations look wrong / arrows don't match vertices"
+
+**Cause:** Dataset parameters don't match visualization parameters.
+
+**Solution:** 
+1. Check if metadata file exists and has correct parameters
+2. Don't use `--no-require-metadata` flag
+3. Regenerate dataset if parameters are uncertain
+
+### Issue: "Can't find variant directory"
+
+**Cause:** data_root doesn't include variant subdirectory.
+
+**Solution:** Include variant directory in data_root:
+```bash
+--data_root toy_datasets/data/star8/variant_e450c505
+```
+
+Or let the script auto-detect from predictions metadata.
+
+## Best Practices
+
+1. ✅ **Always use metadata** - Don't specify `--no-require-metadata`
+2. ✅ **Let auto-detection work** - Predictions file contains evaluation metadata
+3. ✅ **Verify output** - Check that flow arrows align with vertex movements
+4. ✅ **Use variant directories** - Keep sweep datasets organized
+5. ✅ **Save metadata copies** - `visualization_metadata.json` ensures reproducibility
+6. ✅ **Generate error visualizations** - EPE and AE heatmaps provide quantitative assessment
+7. ✅ **Check error hotspots** - Bright regions in error heatmaps indicate problematic areas
+8. ✅ **Verify masks first** - If errors seem wrong, check mask visualizations to ensure GT masks are correct
+9. ✅ **Look for blue regions in mask comparison** - Blue pixels indicate predictions where GT says invalid (potential GT mask issues)
 
 ## Notes
 
 - The script automatically finds the nearest valid flow value if a vertex falls on an invalid pixel
-- All three subplots share the same coordinate system for easy comparison
+- All three comparison subplots share the same coordinate system for easy comparison
 - Images are saved at 150 DPI for good quality without being too large
+- Metadata loading prevents common visualization alignment errors
+- Compatible with both standard and variant directory structures
+- Error visualizations use combined valid masks (GT ∩ predictions) for fair comparison
+- NaN values in error maps indicate invalid pixels (shown as gaps in heatmaps)
+- Colorbars automatically scale to the actual error range in each image
+- Angular error uses the standard 3D formulation `(u, v, 1)` from optical flow benchmarks
+- Mean error metrics provide quick quantitative assessment without reading entire heatmaps
+- **Mask visualizations help debug GT mask issues** - look for unexpected blue regions in comparison panel
+- Mask percentages help identify if too few or too many pixels are marked valid

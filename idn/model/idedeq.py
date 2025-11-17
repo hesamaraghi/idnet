@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn.functional import unfold, grid_sample, interpolate
 
 from .extractor import LiteEncoder,TinyEncoder
-from .update import LiteUpdateBlock,TinyUpdateBlock
+from .update import LiteUpdateBlock,TinyUpdateBlock, NanoUpdateBlock
 
 from math import sqrt
 
@@ -324,6 +324,31 @@ class TinyIDEDEQIDO(IDEDEQIDO):
             stride=2 if self.downsample == 8 else 1,
         )
         self.update_net = TinyUpdateBlock(
+            hidden_dim=self.hidden_dim, input_dim=self.input_dim,
+            num_outputs=2 if self.pred_next_flow else 1,
+            downsample=self.downsample)
+        if self.input_flowmap:
+            self.cnet = TinyEncoder(
+                output_dim=self.hidden_dim // 2, dropout=0, n_first_channels=2, stride=2 if self.downsample == 8 else 1)
+        else:
+            self.cnet = None
+            
+class NanoIDEDEQIDO(IDEDEQIDO):
+    def __init__(self, config):
+        super(NanoIDEDEQIDO, self).__init__(config)
+        self.input_dim = 4
+        n_first_channels = 2
+        if self.add_eigenvalues:
+            n_first_channels += 1
+            if self.add_filter_values:
+                n_first_channels += 1
+        self.fnet = TinyEncoder(
+            output_dim=self.input_dim // 2,
+            dropout=0,
+            n_first_channels=n_first_channels,
+            stride=2 if self.downsample == 8 else 1,
+        )
+        self.update_net = NanoUpdateBlock(
             hidden_dim=self.hidden_dim, input_dim=self.input_dim,
             num_outputs=2 if self.pred_next_flow else 1,
             downsample=self.downsample)

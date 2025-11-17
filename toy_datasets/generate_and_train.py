@@ -49,6 +49,12 @@ def main():
     parser.add_argument("--training_seed", "--training-seed", type=int, default=None,
                        dest="training_seed", help="Random seed for reproducibility")
     
+    # Model architecture parameters
+    parser.add_argument("--model_name", "--model-name", type=str, default=None,
+                       dest="model_name", help="Model architecture (TinyIDEDEQIDO or NanoIDEDEQIDO)")
+    parser.add_argument("--model_hidden_dim", "--model-hidden-dim", type=int, default=None,
+                       dest="model_hidden_dim", help="Model hidden dimension (e.g., 8, 32)")
+    
     # Feature extraction hyperparameters
     parser.add_argument("--training_add_eigenvalues", "--training-add-eigenvalues", type=lambda x: x.lower() == 'true', default=None,
                        dest="training_add_eigenvalues", help="Add eigenvalue features (true/false)")
@@ -170,22 +176,6 @@ def main():
     # Set wandb run name to include variant hash for easy identification
     run_name_suffix = f"-ds{args.dataset_save_step}-f{args.dataset_total_frames}-v{config_hash[:6]}"
     
-    # Add wandb tags for easy filtering in dashboard
-    tags = f"save_step_{args.dataset_save_step},frames_{args.dataset_total_frames},variant_{config_hash[:6]}"
-    tags += f",delta_t_{args.training_delta_t_ms}"
-    if args.training_num_bins:
-        tags += f",bins_{args.training_num_bins}"
-    if args.training_add_eigenvalues is not None:
-        tags += f",eig_{args.training_add_eigenvalues}"
-    if args.training_add_filter_values is not None:
-        tags += f",filt_{args.training_add_filter_values}"
-    if args.training_filter_size is not None:
-        tags += f",fsize_{args.training_filter_size}"
-    if args.training_tau is not None:
-        tags += f",tau_{args.training_tau}"
-    if args.training_normalize_voxel is not None:
-        tags += f",norm_{args.training_normalize_voxel}"
-    
     # Note: We'll log dataset generation params via wandb config in the Trainer
     # For now, pass them as environment variables
     os.environ['DATASET_GEN_SAVE_STEP'] = str(args.dataset_save_step)
@@ -195,6 +185,13 @@ def main():
     
     # training_delta_t_ms is always set (either from args or auto-calculated)
     overrides.append(f"dataset.train.delta_t_ms={args.training_delta_t_ms}")
+    
+    # Model architecture parameters
+    if args.model_name is not None:
+        overrides.append(f"model.name={args.model_name}")
+    if args.model_hidden_dim is not None:
+        overrides.append(f"model.hidden_dim={args.model_hidden_dim}")
+    
     if args.training_num_bins is not None:
         overrides.append(f"dataset.num_voxel_bins={args.training_num_bins}")
         overrides.append(f"data_loader.common.num_voxel_bins={args.training_num_bins}")
@@ -215,11 +212,10 @@ def main():
     if args.training_tau is not None:
         overrides.append(f"dataset.train.tau={args.training_tau}")
     
-    # Add seed to run name and tags for identification (actual seeding handled by PyTorch defaults)
+    # Add seed to run name for identification (actual seeding handled by PyTorch defaults)
     # Note: To implement actual seeding, would need to modify the training script
     if args.training_seed is not None:
         run_name_suffix = f"{run_name_suffix}-seed{args.training_seed}"
-        tags += f",seed_{args.training_seed}"
         # Store seed in environment for potential use in training script
         os.environ['TRAINING_SEED'] = str(args.training_seed)
     
