@@ -1,0 +1,80 @@
+
+# Feature extraction hyperparameter sweep
+# Focus on eigenvalue and filter value configurations
+# 
+# Usage:
+#   1. Create sweep: wandb sweep toy_datasets/sweep_config_features.yaml
+#   2. Run agents: wandb agent <sweep_id>
+
+program: toy_datasets/generate_and_train.py
+project: toydataset-nano-idnet  # wandb project name
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val/epe
+  goal: minimize
+
+parameters:
+  # Dataset generation parameters (fixed for this sweep)
+  dataset_save_step:
+    values:
+      - 20 
+      - 40
+      - 60
+  
+  dataset_total_frames:
+    value: 2000
+  
+  dataset_test_size:
+    value: 0.2
+  
+  dataset_base_name:
+    value: "star8"
+  
+  dataset_outdir:
+    value: "toy_datasets/data/star8"
+  
+  # Model architecture parameters
+  model_name:
+    values:
+      - NanoIDEDEQIDO
+  
+  model_hidden_dim:
+    values:
+      - 4
+  
+  # Training parameters
+  training_num_bins:
+    values:
+      - 5
+      - 15
+  
+  training_epochs:
+    value: 500
+  
+  training_seed:
+    values: 
+      - 42
+      - 420
+      - 4200
+      - 42000
+  
+  # Feature extraction hyperparameters (MAIN FOCUS)
+  training_add_eigenvalues:
+    values:
+      - false
+  
+  training_add_filter_values:
+    values: 
+      - false
+  
+  training_filter_size:
+    values: 
+      - 5
+  
+  training_tau:
+    values: 
+      - 1000
+  
+  training_normalize_voxel:
+    values:
+      - true
