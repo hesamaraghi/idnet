@@ -16,7 +16,7 @@ python toy_datasets/eval_toy_dataset.py --run_path <wandb_run_path> [OPTIONS]
 ### Optional Arguments
 
 - `--ckpt_dir`: Directory where checkpoints are stored (default: `ckpt_dir`)
-- `--output_dir`: Directory to save evaluation results (default: `evaluations`)
+- `--output_dir`: Directory to save evaluation results (default: `toy_datasets/evaluations`)
 - `--gpu`: GPU device id (default: 0)
 
 ## Example
@@ -25,7 +25,7 @@ python toy_datasets/eval_toy_dataset.py --run_path <wandb_run_path> [OPTIONS]
 python toy_datasets/eval_toy_dataset.py \
     --run_path haraghi/toydataset-tinyIDNet-multiseed/fxd5fk65 \
     --ckpt_dir ckpt_dir \
-    --output_dir evaluations \
+    --output_dir toy_datasets/evaluations \
     --gpu 0
 ```
 
@@ -36,9 +36,26 @@ The script will:
 1. Load the model configuration from wandb
 2. Load the trained model weights from `ckpt_dir/{run_id}/model.ckpt`
 3. Create train and validation dataloaders based on the config
+   - **IMPORTANT**: Forces in-memory preprocessing for both splits (ignores saved preprocessed files)
+   - This ensures evaluation uses current data even if dataset was regenerated
 4. Run inference on both splits
-5. Compute metrics: L1, L2, EPE, and 3PE
+5. Compute metrics: L1, L2, EPE, 1PE, and 3PE
 6. Save results to `{output_dir}/{project}/{run_id}/predictions.pt`
+
+### Preprocessing Behavior
+
+**Critical**: The evaluation script always forces fresh preprocessing in memory, regardless of config settings:
+
+- `in_memory: True` - All preprocessing done in memory
+- `force_preprocess: True` - Ignores any saved preprocessed files
+- `do_not_save_preprocessed: True` - Doesn't save new preprocessed files
+
+**Why?** This prevents issues when:
+- Dataset was regenerated with different parameters after training
+- Saved preprocessed files are stale or from different parameter settings
+- Evaluation needs to match current dataset state
+
+This ensures evaluation always uses the actual current data, not cached versions.
 
 ### Metrics Explained
 
@@ -70,11 +87,30 @@ The saved `.pt` file contains a dictionary with the following structure:
     },
     'val': {
         # Same structure as 'train'
+    },
+    'metadata': {
+        'run_path': str,                  # Wandb run path
+        'run_id': str,                    # Wandb run ID
+        'data_root': str,                 # Dataset root directory
+        'train_sequences': List[str],     # Training sequence names
+        'val_sequences': List[str],       # Validation sequence names
+        'representation_type': str,       # Event representation type (e.g., 'voxel')
+        'num_voxel_bins': int            # Number of voxel bins
     }
 }
 ```
 
 Each prediction tensor has shape `[batch_size, 2, H, W]` where the 2 channels represent optical flow (u, v).
+
+### Metadata Usage
+
+The saved metadata enables downstream tools to automatically:
+- Locate the correct dataset directory (`data_root`)
+- Identify sequence names for train/val splits
+- Match visualization parameters to evaluation data
+- Verify dataset configuration consistency
+
+This metadata is used by `visualize_predictions.py` for automatic parameter detection.
 
 ## Notes
 
@@ -82,3 +118,6 @@ Each prediction tensor has shape `[batch_size, 2, H, W]` where the 2 channels re
 - Data augmentation (horizontal/vertical flip) is disabled for validation
 - All sequences are concatenated for evaluation
 - The script requires the data to be available at the paths specified in the wandb config
+- **Preprocessing is always forced in-memory** to ensure current dataset is used
+- Evaluation metadata is saved for downstream visualization tools
+- Compatible with variant directory structure from parallel sweeps
