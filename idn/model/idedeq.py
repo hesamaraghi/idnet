@@ -336,7 +336,10 @@ class TinyIDEDEQIDO(IDEDEQIDO):
 class NanoIDEDEQIDO(IDEDEQIDO):
     def __init__(self, config):
         super(NanoIDEDEQIDO, self).__init__(config)
-        self.input_dim = 4
+        # Get input_dim from config, handle None (null in YAML)
+        input_dim_config = getattr(config, 'input_dim', None)
+        self.input_dim = input_dim_config if input_dim_config is not None else 4
+        
         n_first_channels = 2
         if self.add_eigenvalues:
             n_first_channels += 1
@@ -348,10 +351,16 @@ class NanoIDEDEQIDO(IDEDEQIDO):
             n_first_channels=n_first_channels,
             stride=2 if self.downsample == 8 else 1,
         )
+        
+        # Get mask_channels from config, handle None (null in YAML)
+        mask_channels_config = getattr(config, 'mask_channels', None)
+        mask_channels = mask_channels_config if mask_channels_config is not None else 16
+        
         self.update_net = NanoUpdateBlock(
             hidden_dim=self.hidden_dim, input_dim=self.input_dim,
             num_outputs=2 if self.pred_next_flow else 1,
-            downsample=self.downsample)
+            downsample=self.downsample,
+            mask_channels=mask_channels)
         if self.input_flowmap:
             self.cnet = TinyEncoder(
                 output_dim=self.hidden_dim // 2, dropout=0, n_first_channels=2, stride=2 if self.downsample == 8 else 1)

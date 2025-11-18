@@ -76,6 +76,8 @@ validation:
 model:
   name: TinyIDEDEQIDO
   hidden_dim: 32
+  input_dim: null  # For NanoIDEDEQIDO: configurable input dimension (e.g., 4, 8)
+  mask_channels: null  # For NanoIDEDEQIDO: configurable mask channels (e.g., 8, 16, 32)
   pretrain_ckpt: null
   add_eigenvalues: ${dataset.train.add_eigenvalues}
   add_filter_values: ${dataset.train.add_filter_values}

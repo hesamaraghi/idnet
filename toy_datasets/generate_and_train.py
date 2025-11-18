@@ -54,6 +54,10 @@ def main():
                        dest="model_name", help="Model architecture (TinyIDEDEQIDO or NanoIDEDEQIDO)")
     parser.add_argument("--model_hidden_dim", "--model-hidden-dim", type=int, default=None,
                        dest="model_hidden_dim", help="Model hidden dimension (e.g., 8, 32)")
+    parser.add_argument("--model_input_dim", "--model-input-dim", type=int, default=None,
+                       dest="model_input_dim", help="Model input dimension for feature encoder (e.g., 4, 8)")
+    parser.add_argument("--model_mask_channels", "--model-mask-channels", type=int, default=None,
+                       dest="model_mask_channels", help="Number of channels in mask convolution (e.g., 8, 16, 32)")
     
     # Feature extraction hyperparameters
     parser.add_argument("--training_add_eigenvalues", "--training-add-eigenvalues", type=lambda x: x.lower() == 'true', default=None,
@@ -191,6 +195,10 @@ def main():
         overrides.append(f"model.name={args.model_name}")
     if args.model_hidden_dim is not None:
         overrides.append(f"model.hidden_dim={args.model_hidden_dim}")
+    if args.model_input_dim is not None:
+        overrides.append(f"model.input_dim={args.model_input_dim}")
+    if args.model_mask_channels is not None:
+        overrides.append(f"model.mask_channels={args.model_mask_channels}")
     
     if args.training_num_bins is not None:
         overrides.append(f"dataset.num_voxel_bins={args.training_num_bins}")
