@@ -1,0 +1,90 @@
+# Learning rate and augmentation hyperparameter sweep
+# Focus on optimization and data augmentation configurations
+# 
+# Usage:
+#   1. Create sweep: wandb sweep toy_datasets/sweep_config_learning_augment.yaml
+#   2. Run agents: wandb agent <sweep_id>
+
+program: toy_datasets/generate_and_train.py
+project: toydataset-learning-augment_dataaug_  # wandb project name
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val/epe
+  goal: minimize
+
+parameters:
+  # Dataset generation parameters (fixed for this sweep)
+  dataset_save_step:
+    value: 40
+  
+  dataset_total_frames:
+    value: 2000
+  
+  dataset_test_size:
+    value: 0.2
+  
+  dataset_base_name:
+    value: "star8"
+  
+  dataset_outdir:
+    value: "toy_datasets/data/star8"
+  
+  # Model architecture parameters (fixed)
+  model_name:
+    value: TinyIDEDEQIDO
+  
+  model_hidden_dim:
+    value: 32
+  
+  # Training parameters
+  training_num_bins:
+    value: 5
+  
+  training_epochs:
+    value: 500
+  
+  training_seed:
+    values: 
+      - 42
+      # - 420
+  
+  # Learning rate sweep
+  training_lr:
+    values:
+      - 1e-4
+      # - 1e-5
+  
+  # Optimizer sweep
+  training_optimizer:
+    values:
+      - adam
+      - adamw
+  
+  # Batch size sweep
+  training_batch_size:
+    values:
+      - 3
+      # - 6
+      # - 16
+  
+  # Random crop augmentation sweep
+  training_random_crop:
+    values:
+      - "none"  # No random crop
+      - "192x192"  # Random crop to 192x192
+  
+  # Feature extraction hyperparameters (fixed)
+  training_add_eigenvalues:
+    value: false
+  
+  training_add_filter_values:
+    value: false
+  
+  training_filter_size:
+    value: 5
+  
+  training_tau:
+    value: 1000
+  
+  training_normalize_voxel:
+    value: true
