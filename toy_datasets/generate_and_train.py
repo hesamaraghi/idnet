@@ -71,6 +71,16 @@ def main():
     parser.add_argument("--training_tau", "--training-tau", type=int, default=None,
                        dest="training_tau", help="Time constant for recursive filtering in microseconds (e.g., 1000, 15000, 30000)")
     
+    # Learning and optimization hyperparameters
+    parser.add_argument("--training_lr", "--training-lr", type=float, default=None,
+                       dest="training_lr", help="Learning rate (e.g., 1e-4, 1e-5)")
+    parser.add_argument("--training_optimizer", "--training-optimizer", type=str, default=None,
+                       dest="training_optimizer", help="Optimizer type (adam, adamw)")
+    parser.add_argument("--training_batch_size", "--training-batch-size", type=int, default=None,
+                       dest="training_batch_size", help="Training batch size (e.g., 3, 6, 16)")
+    parser.add_argument("--training_random_crop", "--training-random-crop", type=str, default=None,
+                       dest="training_random_crop", help="Random crop size (e.g., 'none', '192x192')")
+    
     args = parser.parse_args()
     
     # Auto-calculate training_delta_t_ms from dataset parameters if not specified
@@ -219,6 +229,22 @@ def main():
         overrides.append(f"dataset.train.normalize_voxel={str(args.training_normalize_voxel).lower()}")
     if args.training_tau is not None:
         overrides.append(f"dataset.train.tau={args.training_tau}")
+    
+    # Learning and optimization hyperparameters
+    if args.training_lr is not None:
+        overrides.append(f"optim.lr={args.training_lr}")
+    if args.training_optimizer is not None:
+        overrides.append(f"optim.optimizer={args.training_optimizer}")
+    if args.training_batch_size is not None:
+        overrides.append(f"data_loader.train.args.batch_size={args.training_batch_size}")
+    if args.training_random_crop is not None:
+        if args.training_random_crop.lower() == "none":
+            overrides.append(f"dataset.train.random_crop=null")
+        else:
+            # Parse format like "192x192" to [192, 192]
+            crop_size = args.training_random_crop.split('x')
+            if len(crop_size) == 2:
+                overrides.append(f"dataset.train.random_crop=[{crop_size[0]},{crop_size[1]}]")
     
     # Add seed to run name for identification (actual seeding handled by PyTorch defaults)
     # Note: To implement actual seeding, would need to modify the training script
