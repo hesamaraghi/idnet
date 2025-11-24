@@ -1,0 +1,110 @@
+# Lissajous curve dataset sweep - COMPLEX TRAJECTORIES ONLY
+# Focuses on quasi-periodic, non-repeating movements
+# Tests if model can handle long-term dependencies and complex motion
+# 
+# Usage:
+#   1. Create sweep: wandb sweep toy_datasets/sweep_config_lissajous_complex.yaml
+#   2. Run agents: wandb agent <sweep_id>
+
+program: toy_datasets/generate_and_train.py
+project: toydataset-lissajous-complex  # wandb project name
+method: grid
+metric:
+  name: val/epe
+  goal: minimize
+
+parameters:
+  # Shape class selection
+  shape_class:
+    value: lissajous
+  
+  # Lissajous-specific parameters (COMPLEX ONLY)
+  shape_type:
+    values:
+      - star      # Most distinctive shape for tracking
+      - hexagon   # Alternative complex shape
+  
+  # Only quasi-periodic ratios (approximating irrational numbers)
+  freq_ratio_a:
+    values:
+      - 13  # 13:8 ≈ 1.625 (close to golden ratio φ ≈ 1.618)
+      - 11  # 11:7 ≈ 1.571 (close to π/2 ≈ 1.571)
+  
+  freq_ratio_b:
+    values:
+      - 8   # Pairs with 13
+      - 7   # Pairs with 11
+  
+  rotation_speed:
+    values:
+      - 3.0
+      - 5.0
+      - 8.0  # Very fast rotation
+  
+  # Dataset generation parameters (LONGER sequences)
+  dataset_save_step:
+    values:
+      - 20   # High temporal resolution
+      - 40   # Standard
+  
+  dataset_total_frames:
+    values:
+      - 10000  # Long enough to see non-periodic behavior
+      - 20000  # Very long sequence
+  
+  dataset_test_size:
+    value: 0.2
+  
+  dataset_base_name:
+    value: "liss_complex"
+  
+  dataset_outdir:
+    value: "toy_datasets/data"
+  
+  # Model architecture parameters
+  model_name:
+    value: NanoIDEDEQIDO
+  
+  model_hidden_dim:
+    values:
+      - 4
+      - 8  # Try slightly larger model for complex motion
+  
+  # Training parameters
+  training_num_bins:
+    values:
+      - 5
+      - 10
+      - 15
+  
+  training_epochs:
+    value: 500
+  
+  training_seed:
+    values: 
+      - 42
+      - 420
+  
+  # Feature extraction hyperparameters
+  training_add_eigenvalues:
+    values:
+      - false
+      - true  # Test if eigenvalues help with complex motion
+  
+  training_add_filter_values:
+    values: 
+      - false
+  
+  training_filter_size:
+    values: 
+      - 5
+      - 7  # Larger filter might capture more complex patterns
+  
+  training_tau:
+    values: 
+      - 1000
+      - 15000  # Longer time constant for temporal integration
+  
+  training_normalize_voxel:
+    values:
+      - true

@@ -23,6 +23,12 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 def main():
     parser = argparse.ArgumentParser(description="Generate dataset and train model")
     
+    # Dataset generation script selection
+    parser.add_argument("--shape_class", "--shape-class", type=str, default="star8",
+                       dest="shape_class", 
+                       choices=['star8', 'triangle', 'lissajous', 'multi_lissajous'],
+                       help="Shape movement class (uses create_dataset_generic.py)")
+    
     # Dataset generation parameters
     # Note: Using underscores to match wandb's parameter format
     parser.add_argument("--dataset_save_step", "--dataset-save-step", type=int, default=40, 
@@ -33,8 +39,8 @@ def main():
                        dest="dataset_test_size", help="Dataset test_size parameter")
     parser.add_argument("--dataset_base_name", "--dataset-base-name", default="star8",
                        dest="dataset_base_name", help="Base name for dataset")
-    parser.add_argument("--dataset_outdir", "--dataset-outdir", default="toy_datasets/data/star8",
-                       dest="dataset_outdir", help="Dataset output directory")
+    parser.add_argument("--dataset_outdir", "--dataset-outdir", default="toy_datasets/data",
+                       dest="dataset_outdir", help="Dataset output directory (flat structure)")
     
     # Training parameters (these will be passed through to training script)
     # NOTE: training_delta_t_ms is automatically calculated from dataset_save_step
@@ -81,6 +87,18 @@ def main():
     parser.add_argument("--training_random_crop", "--training-random-crop", type=str, default=None,
                        dest="training_random_crop", help="Random crop size (e.g., 'none', '192x192')")
     
+    # Shape-specific parameters
+    # Lissajous parameters
+    parser.add_argument("--shape_type", "--shape-type", type=str, default="star",
+                       dest="shape_type", choices=['circle', 'square', 'star', 'hexagon'],
+                       help="Shape type for Lissajous")
+    parser.add_argument("--freq_ratio_a", "--freq-ratio-a", type=int, default=3,
+                       dest="freq_ratio_a", help="Lissajous frequency ratio numerator")
+    parser.add_argument("--freq_ratio_b", "--freq-ratio-b", type=int, default=2,
+                       dest="freq_ratio_b", help="Lissajous frequency ratio denominator")
+    parser.add_argument("--rotation_speed", "--rotation-speed", type=float, default=2.0,
+                       dest="rotation_speed", help="Rotation speed for Lissajous")
+    
     args = parser.parse_args()
     
     # Auto-calculate training_delta_t_ms from dataset parameters if not specified
@@ -102,10 +120,11 @@ def main():
     print("="*80)
     
     # Generate dataset with auto-naming to avoid conflicts
-    # Use absolute path to the script to avoid path issues
-    create_flow_script = script_dir / "create_flow_from_movement.py"
+    # Use create_dataset_generic.py (supports all shape types including star8)
+    create_dataset_script = script_dir / "create_dataset_generic.py"
     dataset_cmd = [
-        sys.executable, str(create_flow_script),
+        sys.executable, str(create_dataset_script),
+        "--shape-class", args.shape_class,
         "--seq-name", args.dataset_base_name,
         "--auto-name",  # This will append a config hash
         "--total-frames", str(args.dataset_total_frames),
@@ -114,6 +133,15 @@ def main():
         "--outdir", args.dataset_outdir,
         "--sanity-check",  # Generate sanity check visualizations
     ]
+    
+    # Add shape-specific parameters
+    if args.shape_class == 'lissajous':
+        dataset_cmd.extend([
+            "--shape-type", args.shape_type,
+            "--freq-ratio-a", str(args.freq_ratio_a),
+            "--freq-ratio-b", str(args.freq_ratio_b),
+            "--rotation-speed", str(args.rotation_speed),
+        ])
     
     print(f"Running: {' '.join(dataset_cmd)}")
     result = subprocess.run(dataset_cmd, check=True, capture_output=True, text=True)
