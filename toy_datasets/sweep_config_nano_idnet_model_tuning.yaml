@@ -30,7 +30,7 @@ parameters:
     value: "star8"
   
   dataset_outdir:
-    value: "toy_datasets/data/star8"
+    value: "toy_datasets/data"
   
   # Model architecture parameters
   model_name:

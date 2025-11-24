@@ -1,0 +1,108 @@
+# Lissajous curve dataset sweep with various complexity levels
+# Tests model performance on non-periodic, longer trajectories
+# 
+# Usage:
+#   1. Create sweep: wandb sweep toy_datasets/sweep_config_lissajous.yaml
+#   2. Run agents: wandb agent <sweep_id>
+
+program: toy_datasets/generate_and_train.py
+project: toydataset-lissajous-idnet  # wandb project name
+method: grid  # or 'random', 'bayes'
+metric:
+  name: val/epe
+  goal: minimize
+
+parameters:
+  # Shape class selection (NEW!)
+  shape_class:
+    value: lissajous
+  
+  # Lissajous-specific parameters
+  shape_type:
+    values:
+      - circle
+      - star
+      - hexagon
+  
+  freq_ratio_a:
+    values:
+      - 5   # Moderate complexity (5:3)
+      - 7   # More complex (7:5)
+      - 13  # Quasi-periodic (13:8, approximates golden ratio)
+  
+  freq_ratio_b:
+    values:
+      - 3   # Pairs with 5 or 7
+      - 5   # Pairs with 7
+      - 8   # Pairs with 13
+  
+  rotation_speed:
+    values:
+      - 2.0
+      - 5.0  # Faster rotation for more complexity
+  
+  # Dataset generation parameters
+  dataset_save_step:
+    values:
+      - 20 
+      - 40
+      - 60
+  
+  dataset_total_frames:
+    values:
+      - 5000   # Longer to capture non-periodic behavior
+      - 10000  # Even longer for quasi-periodic trajectories
+  
+  dataset_test_size:
+    value: 0.2
+  
+  dataset_base_name:
+    value: "lissajous"
+  
+  dataset_outdir:
+    value: "toy_datasets/data"
+  
+  # Model architecture parameters
+  model_name:
+    values:
+      - NanoIDEDEQIDO
+  
+  model_hidden_dim:
+    values:
+      - 4
+  
+  # Training parameters
+  training_num_bins:
+    values:
+      - 5
+      - 15
+  
+  training_epochs:
+    value: 500
+  
+  training_seed:
+    values: 
+      - 42
+      - 420
+      - 4200
+  
+  # Feature extraction hyperparameters
+  training_add_eigenvalues:
+    values:
+      - false
+  
+  training_add_filter_values:
+    values: 
+      - false
+  
+  training_filter_size:
+    values: 
+      - 5
+  
+  training_tau:
+    values: 
+      - 1000
+  
+  training_normalize_voxel:
+    values:
+      - true

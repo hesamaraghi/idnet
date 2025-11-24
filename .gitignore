@@ -27,3 +27,4 @@ toy_datasets/config/remote.yaml
 paper
 __ignore_*
 ._.DS_Store
+*.pdf
