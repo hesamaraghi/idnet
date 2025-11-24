@@ -1,5 +1,4 @@
 
-
 # Feature extraction hyperparameter sweep
 # Focus on eigenvalue and filter value configurations
 # 
@@ -11,7 +10,7 @@ program: toy_datasets/generate_and_train.py
 project: toydataset-nano-idnet  # wandb project name
 method: grid  # or 'random', 'bayes'
 metric:
-  name: val/epe
+  name: nonrec/star8_test/final_prediction_nonseq/L1/avg
   goal: minimize
 
 parameters:
@@ -75,11 +74,11 @@ parameters:
   # Feature extraction hyperparameters (MAIN FOCUS)
   training_add_eigenvalues:
     values:
-      - false
+      - true
   
   training_add_filter_values:
     values: 
-      - false
+      - true
   
   training_filter_size:
     values: 
