@@ -29,6 +29,7 @@ import os
 import sys
 import argparse
 import importlib
+import glob
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -51,6 +52,49 @@ from create_flow_from_movement import (
 DEFAULT_OUTDIR = os.path.join(os.path.dirname(__file__), "data")
 
 import imageio.v2 as imageio
+
+
+def select_random_dtd_texture(dtd_path: str, seed: int) -> str:
+    """
+    Select a random texture image from the DTD (Describable Textures Dataset).
+    
+    Args:
+        dtd_path: Path to the DTD dataset (should contain category folders)
+        seed: Random seed for reproducibility
+        
+    Returns:
+        Path to randomly selected texture image
+        
+    Raises:
+        ValueError: If dtd_path doesn't exist or no images found
+    """
+    if not os.path.exists(dtd_path):
+        raise ValueError(f"DTD path does not exist: {dtd_path}")
+    
+    # Get all category directories
+    categories = sorted([d for d in os.listdir(dtd_path) 
+                        if os.path.isdir(os.path.join(dtd_path, d))])
+    
+    if not categories:
+        raise ValueError(f"No categories found in DTD path: {dtd_path}")
+    
+    # Use seed to select category and image
+    rng = np.random.RandomState(seed)
+    category = rng.choice(categories)
+    
+    # Get all jpg images in the selected category
+    category_path = os.path.join(dtd_path, category)
+    images = sorted(glob.glob(os.path.join(category_path, "*.jpg")))
+    
+    if not images:
+        raise ValueError(f"No images found in category: {category}")
+    
+    # Select random image
+    image_path = rng.choice(images)
+    
+    print(f"Selected DTD texture (seed={seed}): {category}/{os.path.basename(image_path)}")
+    
+    return image_path
 
 
 def create_event_animation(
@@ -130,8 +174,9 @@ def create_event_animation(
         # Convert plot to image
         fig.tight_layout(pad=0)
         fig.canvas.draw()
-        frame_data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        frame_data = frame_data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        frame_data = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
+        frame_data = frame_data.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+        frame_data = frame_data[:, :, :3]  # Remove alpha channel
         frames.append(frame_data)
         plt.close(fig)
         
@@ -308,6 +353,7 @@ def build_dataset(
     start_ts_us: int,
     flow_dt_us: int,
     test_size: float,
+    force_regenerate: bool = False,
 ) -> dict:
     """
     Generate optical flow + events dataset from any ShapeMovementBase instance.
@@ -315,6 +361,7 @@ def build_dataset(
     Args:
         shape_instance: Instance of a ShapeMovementBase subclass
         seq_name: Sequence name for directory
+        force_regenerate: If True, regenerate dataset even if it already exists
         (other parameters same as original function)
         
     Returns:
@@ -339,7 +386,21 @@ def build_dataset(
     dataset_exists = os.path.exists(seq_flow_root) or os.path.exists(seq_event_root)
     if dataset_exists:
         metadata_path = os.path.join(outdir, "train_optical_flow", seq_name, "dataset_metadata.json")
-        if os.path.exists(metadata_path):
+        
+        if force_regenerate:
+            print(f"[force-regenerate] Removing existing dataset: {seq_name}")
+            import shutil
+            for path in [seq_flow_root, seq_event_root]:
+                if os.path.exists(path):
+                    shutil.rmtree(path)
+            # Also remove test split if it exists
+            seq_flow_root_test = os.path.join(outdir, "train_optical_flow", f"{seq_name}_test")
+            seq_event_root_test = os.path.join(outdir, "train_events", f"{seq_name}_test")
+            for path in [seq_flow_root_test, seq_event_root_test]:
+                if os.path.exists(path):
+                    shutil.rmtree(path)
+            print(f"[force-regenerate] Removed existing dataset, regenerating...")
+        elif os.path.exists(metadata_path):
             print(f"[skip] Dataset already exists at {outdir}/{seq_name}")
             return {
                 "flow_dir_train": flow_dir_train,
@@ -373,8 +434,52 @@ def build_dataset(
         os.makedirs(event_dir_test, exist_ok=True)
 
     print("Generating events...")
-    events = shape_instance.generate_events()
-    events['t'] = events['t'] * frame_time_us
+    
+    # Choose event generation method
+    if args.event_generation_method == 'v2e':
+        # Import v2e generator (will fail gracefully if not installed)
+        try:
+            from v2e_event_generator import V2EEventGenerator
+            
+            print(f"Using v2e realistic DVS simulation:")
+            print(f"  pos_threshold: {args.v2e_pos_thres}")
+            print(f"  neg_threshold: {args.v2e_neg_thres}")
+            print(f"  sigma_threshold: {args.v2e_sigma_thres}")
+            print(f"  cutoff_hz: {args.v2e_cutoff_hz}")
+            
+            # Generate events with v2e
+            events = shape_instance.generate_events_v2e(
+                pos_threshold=args.v2e_pos_thres,
+                neg_threshold=args.v2e_neg_thres,
+                sigma_threshold=args.v2e_sigma_thres,
+                cutoff_hz=args.v2e_cutoff_hz,
+                leak_rate_hz=args.v2e_leak_rate_hz,
+                shot_noise_rate_hz=args.v2e_shot_noise_rate_hz,
+                refractory_period_s=args.v2e_refractory_period_s,
+                frame_time_us=frame_time_us,
+                seed=args.v2e_seed,
+                photoreceptor_noise=args.v2e_photoreceptor_noise,
+                leak_jitter_fraction=args.v2e_leak_jitter_fraction,
+                noise_rate_cov_decades=args.v2e_noise_rate_cov_decades,
+                fg_gamma=args.v2e_fg_gamma,
+                bg_gamma=args.v2e_bg_gamma,
+                fg_brightness_scale=args.v2e_fg_brightness,
+                bg_brightness_scale=args.v2e_bg_brightness,
+            )
+        except ImportError as e:
+            print(f"ERROR: v2e not available. {e}")
+            print("Install v2e with one of these methods:")
+            print("  1. uv pip install -e \".[v2e]\"")
+            print("  2. git submodule add https://github.com/SensorsINI/v2e.git external/v2e")
+            print("     cd external/v2e && uv pip install -e . && cd ../..")
+            print("\nSee toy_datasets/INSTALL_V2E.md for details.")
+            sys.exit(1)
+    else:
+        # Use synthetic boundary-based events
+        print("Using synthetic boundary-based events")
+        events = shape_instance.generate_events()
+        # Convert frame indices to microseconds for synthetic events
+        events['t'] = events['t'] * frame_time_us
 
     # Split events
     if test_size > 0:
@@ -582,6 +687,8 @@ if __name__ == "__main__":
     parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--sanity-check", action="store_true", default=True)
     parser.add_argument("--no-sanity-check", dest="sanity_check", action="store_false")
+    parser.add_argument("--force-regenerate", action="store_true", default=False,
+                       help="Force regeneration of dataset even if it already exists")
     
     # Animation generation
     parser.add_argument("--generate-animation", action="store_true", default=False,
@@ -602,10 +709,16 @@ if __name__ == "__main__":
     
     # Lissajous-specific parameters
     parser.add_argument("--shape-type", default="circle",
-                       choices=['circle', 'square', 'star', 'hexagon'],
+                       choices=['circle', 'square', 'star', 'hexagon', 'polygon'],
                        help="Shape type for Lissajous")
     parser.add_argument("--shape-size", type=int, default=20,
-                       help="Shape size for Lissajous")
+                       help="Shape size for Lissajous (outer radius)")
+    parser.add_argument("--star-num-points", type=int, default=5,
+                       help="Number of points for star shape (e.g., 5, 6, 7, 8)")
+    parser.add_argument("--star-inner-ratio", type=float, default=0.5,
+                       help="Ratio of inner to outer radius for star (0.0-1.0)")
+    parser.add_argument("--polygon-num-sides", type=int, default=6,
+                       help="Number of sides for polygon shape (3=triangle, 5=pentagon, etc.)")
     parser.add_argument("--freq-ratio-a", type=int, default=3,
                        help="Lissajous frequency ratio numerator")
     parser.add_argument("--freq-ratio-b", type=int, default=2,
@@ -632,9 +745,135 @@ if __name__ == "__main__":
     parser.add_argument("--inner-radius", type=int, default=20)
     parser.add_argument("--number-of-rotations", type=int, default=2)
     
+    # Texture parameters (for all shapes)
+    parser.add_argument("--foreground-texture", default=None,
+                       choices=[None, 'solid', 'noise', 'gradient', 'checkerboard', 'image'],
+                       help="Texture type for the shape foreground")
+    parser.add_argument("--background-texture", default=None,
+                       choices=[None, 'solid', 'noise', 'gradient', 'checkerboard', 'image'],
+                       help="Texture type for the background")
+    
+    # Foreground texture parameters
+    parser.add_argument("--fg-texture-color", default="black",
+                       help="Base color for foreground texture (for solid/noise)")
+    parser.add_argument("--fg-noise-type", default="gaussian",
+                       choices=['gaussian', 'uniform'],
+                       help="Type of noise for foreground noise texture")
+    parser.add_argument("--fg-noise-scale", type=float, default=0.3,
+                       help="Noise strength for foreground [0, 1]")
+    parser.add_argument("--fg-noise-seed", type=int, default=42,
+                       help="Random seed for foreground noise (for reproducibility)")
+    parser.add_argument("--fg-gradient-type", default="linear",
+                       choices=['linear', 'radial'],
+                       help="Gradient type for foreground")
+    parser.add_argument("--fg-gradient-color1", default="black",
+                       help="First color for foreground gradient")
+    parser.add_argument("--fg-gradient-color2", default="white",
+                       help="Second color for foreground gradient")
+    parser.add_argument("--fg-gradient-angle", type=float, default=0,
+                       help="Angle for linear gradient (degrees)")
+    parser.add_argument("--fg-checker-size", type=int, default=16,
+                       help="Square size for checkerboard pattern")
+    parser.add_argument("--fg-checker-color1", default="black",
+                       help="First color for foreground checkerboard")
+    parser.add_argument("--fg-checker-color2", default="gray",
+                       help="Second color for foreground checkerboard")
+    
+    # Foreground image texture parameters
+    parser.add_argument("--fg-image-path", default=None,
+                       help="Path to image file for foreground image texture")
+    parser.add_argument("--fg-image-resize-mode", default="fill",
+                       choices=['fill', 'fit', 'tile'],
+                       help="How to resize image: fill (stretch), fit (maintain aspect), tile (repeat)")
+    parser.add_argument("--fg-image-fill-color", default="white",
+                       help="Fill color for 'fit' mode")
+    
+    # Background texture parameters
+    parser.add_argument("--bg-texture-color", default="white",
+                       help="Base color for background texture (for solid/noise)")
+    parser.add_argument("--bg-noise-type", default="gaussian",
+                       choices=['gaussian', 'uniform'],
+                       help="Type of noise for background noise texture")
+    parser.add_argument("--bg-noise-scale", type=float, default=0.3,
+                       help="Noise strength for background [0, 1]")
+    parser.add_argument("--bg-noise-seed", type=int, default=43,
+                       help="Random seed for background noise (for reproducibility)")
+    parser.add_argument("--bg-gradient-type", default="linear",
+                       choices=['linear', 'radial'],
+                       help="Gradient type for background")
+    parser.add_argument("--bg-gradient-color1", default="white",
+                       help="First color for background gradient")
+    parser.add_argument("--bg-gradient-color2", default="gray",
+                       help="Second color for background gradient")
+    parser.add_argument("--bg-gradient-angle", type=float, default=90,
+                       help="Angle for linear gradient (degrees)")
+    parser.add_argument("--bg-checker-size", type=int, default=16,
+                       help="Square size for checkerboard pattern")
+    parser.add_argument("--bg-checker-color1", default="white",
+                       help="First color for background checkerboard")
+    parser.add_argument("--bg-checker-color2", default="lightgray",
+                       help="Second color for background checkerboard")
+    
+    # Background image texture parameters
+    parser.add_argument("--bg-image-path", default=None,
+                       help="Path to image file for background image texture")
+    parser.add_argument("--bg-image-resize-mode", default="fill",
+                       choices=['fill', 'fit', 'tile'],
+                       help="How to resize image: fill (stretch), fit (maintain aspect), tile (repeat)")
+    parser.add_argument("--bg-image-fill-color", default="white",
+                       help="Fill color for 'fit' mode")
+    
+    # DTD random texture selection
+    parser.add_argument("--use-dtd-random", default=None,
+                       choices=[None, 'fg', 'bg', 'both'],
+                       help="Use random textures from DTD dataset: 'fg' (foreground), 'bg' (background), or 'both'")
+    parser.add_argument("--dtd-path", default="/data/idnet/data/dtd/images",
+                       help="Path to DTD dataset images directory")
+    parser.add_argument("--random-seed", type=int, default=42,
+                       help="Random seed for texture selection (used for both fg and bg)")
+    
     # Multi-shape parameters
     parser.add_argument("--num-shapes", type=int, default=3,
                        help="Number of shapes for multi_lissajous")
+    
+    # Event generation method
+    parser.add_argument("--event-generation-method", default="synthetic",
+                       choices=['synthetic', 'v2e'],
+                       help="Method for generating events: 'synthetic' (boundary-based) or 'v2e' (realistic DVS)")
+    
+    # V2E-specific parameters (only used when --event-generation-method v2e)
+    parser.add_argument("--v2e-pos-thres", type=float, default=0.2,
+                       help="V2E positive threshold (contrast sensitivity)")
+    parser.add_argument("--v2e-neg-thres", type=float, default=0.2,
+                       help="V2E negative threshold (contrast sensitivity)")
+    parser.add_argument("--v2e-sigma-thres", type=float, default=0.0,
+                       help="V2E threshold mismatch (variance in thresholds, 0=disabled)")
+    parser.add_argument("--v2e-cutoff-hz", type=float, default=0,
+                       help="V2E photoreceptor cutoff frequency (Hz, 0=disabled)")
+    parser.add_argument("--v2e-leak-rate-hz", type=float, default=0,
+                       help="V2E leak event rate (Hz, 0=disabled)")
+    parser.add_argument("--v2e-shot-noise-rate-hz", type=float, default=0,
+                       help="V2E shot noise rate (Hz, 0=disabled)")
+    parser.add_argument("--v2e-refractory-period-s", type=float, default=0,
+                       help="V2E refractory period (seconds, 0=disabled)")
+    parser.add_argument("--v2e-seed", type=int, default=0,
+                       help="V2E random seed (0=random, >0=fixed for reproducibility)")
+    parser.add_argument("--v2e-photoreceptor-noise", action="store_true", default=False,
+                       help="V2E use photoreceptor noise model (more realistic temporal noise)")
+    parser.add_argument("--v2e-leak-jitter-fraction", type=float, default=0,
+                       help="V2E leak event timing jitter (fraction of interval, 0=disabled)")
+    parser.add_argument("--v2e-noise-rate-cov-decades", type=float, default=0,
+                       help="V2E spatial variation in noise rates (decades, 0=disabled)")
+    
+    # V2E brightness/contrast adjustment
+    parser.add_argument("--v2e-fg-gamma", type=float, default=1.5,
+                       help="V2E foreground gamma correction (>1 darkens, <1 brightens, default=1.5 to darken fg)")
+    parser.add_argument("--v2e-bg-gamma", type=float, default=0.8,
+                       help="V2E background gamma correction (>1 darkens, <1 brightens, default=0.8 to brighten bg)")
+    parser.add_argument("--v2e-fg-brightness", type=float, default=1.0,
+                       help="V2E foreground brightness scale (0-1, lower=darker, default=1.0)")
+    parser.add_argument("--v2e-bg-brightness", type=float, default=1.0,
+                       help="V2E background brightness scale (0-1, lower=darker, default=1.0)")
 
     args = parser.parse_args()
     image_size = (args.image_height, args.image_width)
@@ -644,6 +883,91 @@ if __name__ == "__main__":
         args.flow_dt_us = args.save_step * args.frame_time_us
         print(f"ℹ️  Auto-calculated flow_dt_us = {args.flow_dt_us} us")
     
+    # Handle DTD random texture selection
+    if args.use_dtd_random:
+        if args.use_dtd_random in ['fg', 'both']:
+            # Select random DTD texture for foreground
+            dtd_fg_path = select_random_dtd_texture(args.dtd_path, args.random_seed)
+            args.foreground_texture = 'image'
+            args.fg_image_path = dtd_fg_path
+            print(f"🎨 Using DTD foreground texture: {dtd_fg_path}")
+        
+        if args.use_dtd_random in ['bg', 'both']:
+            # Select random DTD texture for background
+            # Use random_seed + 1 for background to get different texture
+            dtd_bg_path = select_random_dtd_texture(args.dtd_path, args.random_seed + 1)
+            args.background_texture = 'image'
+            args.bg_image_path = dtd_bg_path
+            print(f"🎨 Using DTD background texture: {dtd_bg_path}")
+    
+    # Build texture parameter dictionaries
+    foreground_texture_params = {}
+    background_texture_params = {}
+    
+    if args.foreground_texture:
+        if args.foreground_texture == 'solid':
+            foreground_texture_params = {'color': args.fg_texture_color}
+        elif args.foreground_texture == 'noise':
+            foreground_texture_params = {
+                'base_color': args.fg_texture_color,
+                'noise_type': args.fg_noise_type,
+                'scale': args.fg_noise_scale,
+                'seed': args.fg_noise_seed  # Fix issue #3
+            }
+        elif args.foreground_texture == 'gradient':
+            foreground_texture_params = {
+                'gradient_type': args.fg_gradient_type,
+                'color1': args.fg_gradient_color1,
+                'color2': args.fg_gradient_color2,
+                'angle': args.fg_gradient_angle
+            }
+        elif args.foreground_texture == 'checkerboard':
+            foreground_texture_params = {
+                'square_size': args.fg_checker_size,
+                'color1': args.fg_checker_color1,
+                'color2': args.fg_checker_color2
+            }
+        elif args.foreground_texture == 'image':
+            from matplotlib.colors import to_rgb
+            fill_color = to_rgb(args.fg_image_fill_color) if isinstance(args.fg_image_fill_color, str) else args.fg_image_fill_color
+            foreground_texture_params = {
+                'image_path': args.fg_image_path,
+                'resize_mode': args.fg_image_resize_mode,
+                'fill_color': fill_color
+            }
+    
+    if args.background_texture:
+        if args.background_texture == 'solid':
+            background_texture_params = {'color': args.bg_texture_color}
+        elif args.background_texture == 'noise':
+            background_texture_params = {
+                'base_color': args.bg_texture_color,
+                'noise_type': args.bg_noise_type,
+                'scale': args.bg_noise_scale,
+                'seed': args.bg_noise_seed  # Fix issue #3
+            }
+        elif args.background_texture == 'gradient':
+            background_texture_params = {
+                'gradient_type': args.bg_gradient_type,
+                'color1': args.bg_gradient_color1,
+                'color2': args.bg_gradient_color2,
+                'angle': args.bg_gradient_angle
+            }
+        elif args.background_texture == 'checkerboard':
+            background_texture_params = {
+                'square_size': args.bg_checker_size,
+                'color1': args.bg_checker_color1,
+                'color2': args.bg_checker_color2
+            }
+        elif args.background_texture == 'image':
+            from matplotlib.colors import to_rgb
+            fill_color = to_rgb(args.bg_image_fill_color) if isinstance(args.bg_image_fill_color, str) else args.bg_image_fill_color
+            background_texture_params = {
+                'image_path': args.bg_image_path,
+                'resize_mode': args.bg_image_resize_mode,
+                'fill_color': fill_color
+            }
+    
     # Get shape class
     ShapeClass = get_shape_class(args.shape_class)
     
@@ -651,12 +975,19 @@ if __name__ == "__main__":
     shape_kwargs = {
         'total_frames': args.total_frames,
         'image_size': image_size,
+        'foreground_texture': args.foreground_texture,
+        'background_texture': args.background_texture,
+        'foreground_texture_params': foreground_texture_params,
+        'background_texture_params': background_texture_params,
     }
     
     if args.shape_class == 'lissajous':
         shape_kwargs.update({
             'shape_type': args.shape_type,
             'shape_size': args.shape_size,
+            'star_num_points': args.star_num_points,
+            'star_inner_ratio': args.star_inner_ratio,
+            'polygon_num_sides': args.polygon_num_sides,
             'freq_ratio_a': args.freq_ratio_a,
             'freq_ratio_b': args.freq_ratio_b,
             'phase_shift': args.phase_shift,
@@ -690,6 +1021,17 @@ if __name__ == "__main__":
     shape_instance = ShapeClass(**shape_kwargs)
     print(f"Created {shape_instance.shape_name} with {shape_instance.trajectory_name} trajectory")
     
+    # Force v2e event generation if textures are present
+    if (args.foreground_texture is not None or args.background_texture is not None):
+        if args.event_generation_method != 'v2e':
+            print("\n" + "="*60)
+            print("⚠️  TEXTURE DETECTED: Automatically switching to v2e event generation")
+            print("="*60)
+            print("Reason: Synthetic boundary-based events only work with solid shapes.")
+            print("Textured shapes require realistic DVS simulation (v2e) for proper event generation.")
+            print("="*60 + "\n")
+            args.event_generation_method = 'v2e'
+    
     # Auto-naming
     if args.auto_name:
         config_hash = generate_dataset_hash(**vars(args))
@@ -713,6 +1055,7 @@ if __name__ == "__main__":
         start_ts_us=args.start_ts_us,
         flow_dt_us=args.flow_dt_us,
         test_size=args.test_size,
+        force_regenerate=args.force_regenerate,
     )
     
     if config_hash:
@@ -725,20 +1068,40 @@ if __name__ == "__main__":
         print("Generating shape movement animation...")
         print("="*60)
         
-        # Create animation
-        anim = shape_instance.create_animation(
-            frame_step=args.animation_frame_step,
-            interval=args.animation_interval
-        )
+        # Check if textures are enabled
+        has_textures = args.foreground_texture is not None or args.background_texture is not None
         
-        # Save animation to the sequence directory
-        animation_dir = os.path.join(outdir, "train_optical_flow", seq_name, "animation")
-        os.makedirs(animation_dir, exist_ok=True)
-        animation_path = os.path.join(animation_dir, f"{seq_name}_movement.gif")
-        
-        print(f"Saving animation to {animation_path}...")
-        anim.save(animation_path, writer='pillow', fps=args.animation_fps)
-        print(f"✓ Shape movement animation saved: {animation_path}")
+        if has_textures:
+            # Use texture-based rendering
+            print("Using textured rendering for animation...")
+            frames = shape_instance.create_animation_with_textures(
+                frame_step=args.animation_frame_step,
+                fps=args.animation_fps
+            )
+            
+            # Save animation to the sequence directory
+            animation_dir = os.path.join(outdir, "train_optical_flow", seq_name, "animation")
+            os.makedirs(animation_dir, exist_ok=True)
+            animation_path = os.path.join(animation_dir, f"{seq_name}_movement.gif")
+            
+            print(f"Saving animation to {animation_path}...")
+            imageio.mimsave(animation_path, frames, fps=args.animation_fps, loop=0)
+            print(f"✓ Shape movement animation saved: {animation_path}")
+        else:
+            # Use original matplotlib animation
+            anim = shape_instance.create_animation(
+                frame_step=args.animation_frame_step,
+                interval=args.animation_interval
+            )
+            
+            # Save animation to the sequence directory
+            animation_dir = os.path.join(outdir, "train_optical_flow", seq_name, "animation")
+            os.makedirs(animation_dir, exist_ok=True)
+            animation_path = os.path.join(animation_dir, f"{seq_name}_movement.gif")
+            
+            print(f"Saving animation to {animation_path}...")
+            anim.save(animation_path, writer='pillow', fps=args.animation_fps)
+            print(f"✓ Shape movement animation saved: {animation_path}")
         
         result['animation_path'] = animation_path
     
@@ -748,19 +1111,31 @@ if __name__ == "__main__":
         print("Generating event animation...")
         print("="*60)
         
-        # Get the events (they were already generated in build_dataset)
-        # We need to regenerate them here since they were split
-        print("Regenerating events for visualization...")
-        events = shape_instance.generate_events()
-        events['t'] = events['t'] * args.frame_time_us
+        # Load events from the saved HDF5 file (already generated with correct method)
+        # This preserves the event generation method (synthetic or v2e)
+        events_h5_path = result['events_h5_train']
         
-        # Use only train split events if test_size > 0
-        if args.test_size > 0:
-            split_start_ts_us = int(np.floor(args.total_frames * (1.0 - args.test_size))) * args.frame_time_us
-            train_mask = events['t'] < split_start_ts_us
-            events_to_animate = events[train_mask]
-        else:
-            events_to_animate = events
+        print(f"Loading events from {events_h5_path}...")
+        import h5py
+        with h5py.File(events_h5_path, 'r') as f:
+            x = f['events/x'][:]
+            y = f['events/y'][:]
+            t = f['events/t'][:]
+            p = f['events/p'][:]
+        
+        # Create structured array
+        events_to_animate = np.zeros(len(x), dtype=[
+            ('x', np.int16),
+            ('y', np.int16),
+            ('t', np.int64),
+            ('p', np.bool_)
+        ])
+        events_to_animate['x'] = x
+        events_to_animate['y'] = y
+        events_to_animate['t'] = t
+        events_to_animate['p'] = p.astype(np.bool_)
+        
+        print(f"Loaded {len(events_to_animate)} events from train split")
         
         # Save event animation
         animation_dir = os.path.join(outdir, "train_optical_flow", seq_name, "animation")

@@ -6,13 +6,35 @@ from shape_movement import ShapeMovementBase
 
 class StarMovement(ShapeMovementBase):
     
-    def __init__(self, total_frames=200, image_size=(256, 256), face_color='gold', num_points=5, outer_radius = 40, inner_radius = 20, number_of_rotations=2, **kwargs):
+    def __init__(
+        self, 
+        total_frames=200, 
+        image_size=(256, 256), 
+        face_color='gold', 
+        num_points=5, 
+        outer_radius=40, 
+        inner_radius=20, 
+        number_of_rotations=2,
+        foreground_texture=None,
+        background_texture=None,
+        foreground_texture_params=None,
+        background_texture_params=None,
+        **kwargs
+    ):
         
         self.num_points = num_points
         self.outer_radius = outer_radius
         self.inner_radius = inner_radius
         self.number_of_rotations = number_of_rotations
-        super().__init__(total_frames, image_size, face_color)
+        super().__init__(
+            total_frames, 
+            image_size, 
+            face_color,
+            foreground_texture=foreground_texture,
+            background_texture=background_texture,
+            foreground_texture_params=foreground_texture_params,
+            background_texture_params=background_texture_params
+        )
         
     @property
     def shape_name(self):
