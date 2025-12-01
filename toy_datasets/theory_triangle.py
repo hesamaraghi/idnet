@@ -4,7 +4,9 @@ sys.path.append(".")
 sys.path.append("..")  # to import from parent dir
 
 import argparse
+import json
 import numpy as np
+from datetime import datetime
 
 from IPython.display import HTML
 import tonic
@@ -218,6 +220,47 @@ def main(args):
         args.output_dir,
     )
 
+    if not osp.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Save metadata about this generation
+    metadata = {
+        "timestamp": datetime.now().isoformat(),
+        "script": "theory_triangle.py",
+        "config_name": getattr(args, 'config_name', 'custom'),
+        "args": {
+            "im_size": args.im_size,
+            "total_frames": args.total_frames,
+            "alpha": args.alpha,
+            "triangle_base": args.triangle_base,
+            "triangle_height": args.triangle_height,
+            "added_height": args.added_height,
+            "start_pos": args.start_pos,
+            "movement_direction": args.movement_direction,
+            "face_color": args.face_color,
+            "speed": args.speed,
+            "tau": args.tau,
+            "filter_size": args.filter_size,
+            "portion": args.portion,
+            "gaussian_sigma": args.gaussian_sigma,
+            "output_dir": args.output_dir,
+            "save_gif": args.save_gif,
+            "gif_fps": args.gif_fps,
+            "frame_step": args.frame_step,
+            "viz_start_point": args.viz_start_point,
+            "viz_colormap": args.viz_colormap,
+            "viz_show_colorbar": args.viz_show_colorbar,
+            "viz_show_flow_arrow": args.viz_show_flow_arrow,
+            "viz_show_normal_arrows": args.viz_show_normal_arrows,
+            "invert_polarity": args.invert_polarity,
+        }
+    }
+    
+    metadata_path = osp.join(output_dir, "metadata.json")
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f"💾 Saved metadata to {metadata_path}")
+
     harris_rec = HarrisRecursive(tau, filter_size, image_size)
     print(f"direction of movement (degrees): {movement_direction}")
     
@@ -245,6 +288,11 @@ def main(args):
 
     # Generate event data
     data_array = triangle.generate_events()
+    
+    # Invert polarity if requested (default is to invert)
+    if args.invert_polarity:
+        data_array['p'] = 1 - data_array['p']
+        print("Inverted event polarity")
 
     if args.save_gif:
         transform = tonic.transforms.ToFrame(
@@ -262,15 +310,22 @@ def main(args):
 
     spatiotemporal_image, data_truncated = spatiotemporal_image_at(data_array, harris_rec, image_size, portion)
     frame = int(triangle.total_frames * portion)
-    points = triangle.trajectory_at(frame)[0].reshape(1,2)
-    flows = triangle.compute_optical_flow(points,frame)
+    
+    # Use viz_start_point if provided, otherwise use trajectory point
+    if args.viz_start_point is not None:
+        points = np.array(args.viz_start_point).reshape(1, 2)
+    else:
+        points = triangle.trajectory_at(frame)[0].reshape(1, 2)
+    
+    flows = triangle.compute_optical_flow(points, frame)
     flows_norm = flows / np.linalg.norm(flows, axis=1, keepdims=True)
     points = np.round(points).astype(int).squeeze()
-    v_left = np.array([-triangle_height,triangle_base / 2])
+    v_left = np.array([-triangle_height, triangle_base / 2])
     v_left /= np.linalg.norm(v_left)
-    v_right = np.array([triangle_height,triangle_base / 2])
+    v_right = np.array([triangle_height, triangle_base / 2])
     v_right /= np.linalg.norm(v_right)
-    V = np.stack([v_left,v_right], axis=1)
+    V = np.stack([v_left, v_right], axis=1)
+    
     if args.save_gif:
         assert portion < 0.5, "portion should be less than 0.5 to save the spatiotemporal image gif"
         print(f'frame: {frame}')
@@ -278,22 +333,44 @@ def main(args):
         print(f'flows: {flows}')
         
         # Determine common vmin and vmax
-        vmin = min(data.min() for data in spatiotemporal_image)
-        vmax = max(data.max() for data in spatiotemporal_image)
+        data_min = min(data.min() for data in spatiotemporal_image)
+        data_max = max(data.max() for data in spatiotemporal_image)
+        
+        # For diverging colormaps (those with "Rd", "Blu", "bwr", "seismic", "coolwarm"),
+        # center the colormap at zero by making vmin and vmax symmetric
+        diverging_cmaps = ['RdBu_r', 'RdBu', 'bwr', 'seismic', 'coolwarm', 'PiYG', 'PRGn', 'BrBG', 'PuOr', 'RdGy']
+        if args.viz_colormap in diverging_cmaps or any(cmap in args.viz_colormap for cmap in ['Rd', 'Bu', 'bwr']):
+            # Center at zero
+            abs_max = max(abs(data_min), abs(data_max))
+            vmin = -abs_max
+            vmax = abs_max
+        else:
+            # Use actual data range
+            vmin = data_min
+            vmax = data_max
+        
         plt.figure(figsize=(5, 5))
-        plt.imshow(spatiotemporal_image[0], vmin=vmin, vmax=vmax, cmap='viridis')
+        im = plt.imshow(spatiotemporal_image[0], vmin=vmin, vmax=vmax, cmap=args.viz_colormap)
         plt.gca().invert_yaxis()    
-            
-        plt.quiver(points[0], points[1],
-            40*flows_norm[:,0], 40*flows_norm[:,1],
-            angles='xy', scale_units='xy', scale=1, color='red')
-        plt.quiver(points[0], points[1],
-            40*v_left[0], 40*v_left[1],
-            angles='xy', scale_units='xy', scale=1, color='blue')
-        plt.quiver(points[0], points[1],
-            40*v_right[0], 40*v_right[1],
-            angles='xy', scale_units='xy', scale=1, color='blue')
-        plt.colorbar(fraction=0.046, pad=0.04)
+        
+        # Show flow arrow (red) if enabled
+        if args.viz_show_flow_arrow:
+            plt.quiver(points[0], points[1],
+                40*flows_norm[:,0], 40*flows_norm[:,1],
+                angles='xy', scale_units='xy', scale=1, color='red', linewidth=2, label='Flow')
+        
+        # Show normal arrows (blue) if enabled
+        if args.viz_show_normal_arrows:
+            plt.quiver(points[0], points[1],
+                40*v_left[0], 40*v_left[1],
+                angles='xy', scale_units='xy', scale=1, color='blue', linewidth=2)
+            plt.quiver(points[0], points[1],
+                40*v_right[0], 40*v_right[1],
+                angles='xy', scale_units='xy', scale=1, color='blue', linewidth=2, label='Normals')
+        
+        if args.viz_show_colorbar:
+            plt.colorbar(im, fraction=0.046, pad=0.04)
+        
         plt.title(f"frame {frame} @ speed = {speed} frame/mS", fontsize=12)
         plt.savefig(osp.join(output_dir, f"spatiotemporal_image_frame{frame}.png"))
         plt.close()
@@ -322,6 +399,17 @@ if __name__ == "__main__":
     parser.add_argument("--filter_size", type=int, default=7, help="Size of the spatiotemporal filter")
     parser.add_argument("--gaussian_sigma", type=float, default=1.0, help="Sigma for Gaussian smoothing")
 
+    # Event processing parameters
+    parser.add_argument("--invert_polarity", action="store_true", default=True, help="Whether to invert event polarity (default: True)")
+    parser.add_argument("--no_invert_polarity", action="store_false", dest="invert_polarity", help="Do not invert event polarity")
+    
+    # Visualization parameters
+    parser.add_argument("--viz_start_point", type=float, nargs=2, default=None, help="Starting point (x y) for visualization. If None, uses trajectory point at portion time")
+    parser.add_argument("--viz_colormap", type=str, default="viridis", help="Colormap for spatiotemporal image (e.g., 'viridis', 'RdBu_r', 'bwr', 'seismic')")
+    parser.add_argument("--viz_show_colorbar", action="store_true", help="Whether to show colorbar in spatiotemporal image plot")
+    parser.add_argument("--viz_show_flow_arrow", action="store_true", help="Whether to show the red movement direction arrow")
+    parser.add_argument("--viz_show_normal_arrows", action="store_true", help="Whether to show the blue normal vector arrows")
+    
     # results parameters
     parser.add_argument("--output_dir", type=str, default="theory_triangle", help="Directory to save results")
     parser. add_argument("--save_gif", action="store_true", help="Whether to save the output as a GIF")
