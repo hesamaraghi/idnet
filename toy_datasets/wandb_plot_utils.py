@@ -45,13 +45,23 @@ def fetch_runs(api: wandb.Api, entity: str, project: str, cf: Dict[str, Any]):
     return api.runs(f"{entity}/{project}", filters=filters)
 
 
-def collect_metric_arrays(runs, metric: str):
+def collect_metric_arrays(runs, metric: str, x_axis: str = "epoch"):
+    """Collect metric arrays from runs.
+    
+    Args:
+        runs: W&B runs to collect from
+        metric: Metric key to collect
+        x_axis: X-axis variable name ("epoch" or "step")
+    
+    Returns:
+        Tuple of (array, x_values) or None if no data
+    """
     series = []
     lengths = []
     for run in runs:
         try:
-            hist = run.history(keys=[metric, "epoch"])  # dataframe
-            hist = hist.sort_values("epoch")
+            hist = run.history(keys=[metric, x_axis])  # dataframe
+            hist = hist.sort_values(x_axis)
             vals = hist[metric].to_numpy()
             series.append(vals)
             lengths.append(len(vals))
@@ -61,8 +71,8 @@ def collect_metric_arrays(runs, metric: str):
         return None
     max_len = max(lengths)
     arr = np.array([np.pad(v, (0, max_len - len(v)), constant_values=np.nan) for v in series])
-    epochs = np.arange(1, max_len + 1)
-    return arr, epochs
+    x_values = np.arange(1, max_len + 1)
+    return arr, x_values
 
 
 # -------- Caching helpers --------
@@ -336,6 +346,77 @@ def build_plot_filename(
     return name
 
 
+def compute_global_metric_range(
+    api: wandb.Api,
+    entity: str,
+    project: str,
+    config_list: List[Dict[str, Any]],
+    metric: str = "val_loss",
+    range_type: str = "std",
+    use_cache: bool = True,
+    refresh_cache: bool = False,
+    cache_dir: str = "cache",
+    margin: float = 0.05,
+    x_axis: str = "epoch",
+) -> Tuple[float, float]:
+    """Compute global min/max across multiple configurations for consistent y-axis.
+    
+    Args:
+        api: W&B API instance
+        entity, project: W&B identifiers
+        config_list: List of config dictionaries to scan
+        metric: Metric to analyze
+        range_type: How to compute envelope ("std", "stderr", "minmax", "none")
+        use_cache, refresh_cache, cache_dir: Caching controls
+        margin: Extra margin to add as fraction of range (default 5%)
+        x_axis: X-axis variable name ("epoch" or "step")
+    
+    Returns:
+        (global_min, global_max) tuple for y-axis limits
+    """
+    global_min = float('inf')
+    global_max = float('-inf')
+    
+    for cf in config_list:
+        # Try to load cached data
+        arr_epochs = None
+        if use_cache and not refresh_cache:
+            key = make_cache_key(entity, project, cf, metric)
+            cpath = get_cache_file(cache_dir, key)
+            arr_epochs = load_cached_arrays(cpath)
+            if arr_epochs is not None:
+                arr, epochs = arr_epochs
+        
+        # Fetch if not cached
+        if arr_epochs is None:
+            runs = fetch_runs(api, entity, project, cf)
+            if len(runs) == 0:
+                continue
+            out = collect_metric_arrays(runs, metric, x_axis)
+            if out is None:
+                continue
+            arr, epochs = out
+            if use_cache:
+                key = make_cache_key(entity, project, cf, metric)
+                cpath = get_cache_file(cache_dir, key)
+                save_cached_arrays(cpath, arr, epochs)
+        
+        # Compute envelope and update global range
+        mean, lower, upper = compute_envelope(arr, range_type)
+        global_min = min(global_min, np.nanmin(lower))
+        global_max = max(global_max, np.nanmax(upper))
+    
+    if global_min == float('inf') or global_max == float('-inf'):
+        return None, None
+    
+    # Add margin
+    range_span = global_max - global_min
+    global_min -= margin * range_span
+    global_max += margin * range_span
+    
+    return global_min, global_max
+
+
 def plot_metric_over_epochs(
     api: wandb.Api,
     entity: str,
@@ -353,6 +434,18 @@ def plot_metric_over_epochs(
     # color mapping
     color_by_key: Optional[str] = None,
     color_palette: Optional[List[str]] = None,
+    # label mapping
+    label_map: Optional[Dict[str, str]] = None,
+    # font sizes for publication
+    fontsize_title: int = 14,
+    fontsize_labels: int = 12,
+    fontsize_ticks: int = 10,
+    fontsize_legend: int = 10,
+    # axis controls
+    ylim: Optional[Tuple[float, float]] = None,
+    x_axis: str = "epoch",
+    x_label: Optional[str] = None,
+    y_label: Optional[str] = None,
     # caching
     use_cache: bool = True,
     refresh_cache: bool = False,
@@ -407,7 +500,7 @@ def plot_metric_over_epochs(
             if len(runs) == 0:
                 print(f"No runs for {cf}. Skipping.")
                 continue
-            out = collect_metric_arrays(runs, metric)
+            out = collect_metric_arrays(runs, metric, x_axis)
             if out is None:
                 print(f"No metric data for {cf}. Skipping.")
                 continue
@@ -424,6 +517,22 @@ def plot_metric_over_epochs(
         if not label.strip():
             # Fallback to full config label when there is only one combo
             label = filter_label(cf)
+
+        # Apply label mapping if provided
+        if label_map is not None:
+            # First, try to match the entire label (for complex multi-key labels)
+            if label in label_map:
+                label = label_map[label]
+            # If color_by_key is specified, try to replace individual values
+            elif color_by_key is not None and color_by_key in cf:
+                original_value = cf[color_by_key]
+                if original_value in label_map:
+                    # If the label is just the value (single varying key), replace entirely
+                    if label == str(original_value):
+                        label = label_map[original_value]
+                    else:
+                        # If it's a complex label with multiple keys, replace the value portion
+                        label = label.replace(str(original_value), label_map[original_value])
 
         # Determine color
         if color_by_key is not None and color_by_key in cf and cf[color_by_key] in value_to_color:
@@ -443,14 +552,30 @@ def plot_metric_over_epochs(
     if not plotted_any:
         raise ValueError("No data plotted. Check filters and metric.")
 
-    plt.xlabel("Epoch")
-    plt.ylabel(metric.replace("_", " ").title())
+    # Set x-axis label (default based on x_axis parameter or use custom)
+    if x_label is None:
+        x_label = x_axis.capitalize()
+    plt.xlabel(x_label, fontsize=fontsize_labels)
+    
+    # Set y-axis label (use custom or format metric name)
+    if y_label is None:
+        y_label = metric.replace("_", " ").title()
+    plt.ylabel(y_label, fontsize=fontsize_labels)
+    
     if title:
-        plt.title(title)
+        plt.title(title, fontsize=fontsize_title)
     if grid:
         plt.grid(True, alpha=0.3)
     if show_legend:
-        plt.legend()
+        plt.legend(fontsize=fontsize_legend)
+    
+    # Set y-axis limits if provided
+    if ylim is not None:
+        plt.ylim(ylim)
+    
+    # Set tick label sizes
+    plt.tick_params(axis='both', which='major', labelsize=fontsize_ticks)
+    
     plt.tight_layout()
 
 
@@ -478,6 +603,7 @@ __all__ = [
     "plot_metric_over_epochs",
     "save_current_figure",
     "build_plot_filename",
+    "compute_global_metric_range",
     # Expose internals if needed by power users:
     "expand_config_filter",
     "filter_label",

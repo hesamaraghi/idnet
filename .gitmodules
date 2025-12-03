@@ -1,0 +1,3 @@
+[submodule "external/v2e"]
+	path = external/v2e
+	url = https://github.com/SensorsINI/v2e.git

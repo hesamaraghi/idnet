@@ -1,5 +1,6 @@
 __pycache__/
 .vscode/
+.github
 data/*
 !data/.gitkeep
 sbatch_folder
@@ -24,6 +25,7 @@ toy_datasets/evaluations
 toy_datasets/data
 toy_datasets/visualizations
 toy_datasets/config/remote.yaml
+toy_datasets/comparison_results
 paper
 __ignore_*
 ._.DS_Store
