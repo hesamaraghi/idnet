@@ -30,3 +30,6 @@ paper
 __ignore_*
 ._.DS_Store
 *.pdf
+# pixi environments
+.pixi/*
+!.pixi/config.toml
