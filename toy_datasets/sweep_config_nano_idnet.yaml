@@ -10,7 +10,7 @@ program: toy_datasets/generate_and_train.py
 project: toydataset-nano-idnet  # wandb project name
 method: grid  # or 'random', 'bayes'
 metric:
-  name: val/epe
+  name: nonrec/star8_test/final_prediction_nonseq/L1/avg
   goal: minimize
 
 parameters:
@@ -34,13 +34,13 @@ parameters:
     value: "toy_datasets/data/star8"
   
   # Model architecture parameters
-  model_name:
-    values:
-      - NanoIDEDEQIDO
+  # model_name:
+  #   values:
+  #     - NanoIDEDEQIDO
   
-  model_hidden_dim:
-    values:
-      - 4
+  # model_hidden_dim:
+  #   values:
+  #     - 4
   
   # Training parameters
   training_num_bins:
@@ -57,15 +57,18 @@ parameters:
       - 420
       - 4200
       - 42000
+      - 420000
   
   # Feature extraction hyperparameters (MAIN FOCUS)
   training_add_eigenvalues:
     values:
       - false
+      - true
   
   training_add_filter_values:
     values: 
       - false
+      - true
   
   training_filter_size:
     values: 
