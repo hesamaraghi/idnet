@@ -4,7 +4,8 @@ sys.path.append(".")
 sys.path.append("..")
 import numpy as np
 
-from star8 import StarMovement
+from omegaconf import OmegaConf
+from dataset_generator import DatasetGenerator
 from utils.visualize_utils import animate_events
 from utils.data_utils import *
 from idn.loader.loader_dsec import HarrisRecursive
@@ -24,17 +25,50 @@ from pytorch_lightning.callbacks import LearningRateMonitor, TQDMProgressBar
 import torchmetrics
 from torch.utils.data import DataLoader, TensorDataset
 import wandb
-
+import faiss
 
 # -------------------------------
 # Utilities
 # -------------------------------
-def knn_indices_from_pos(pos: torch.Tensor, k: int) -> torch.Tensor:
-    """Compute k nearest neighbors (including self) from positions."""
-    dist = torch.cdist(pos, pos)  # [N, N]
-    knn_idx = dist.topk(k, largest=False).indices  # [N, k]
-    return knn_idx
+# def knn_indices_from_pos(pos: torch.Tensor, k: int) -> torch.Tensor:
+#     """Compute k nearest neighbors (including self) from positions."""
+#     dist = torch.cdist(pos, pos)  # [N, N]
+#     knn_idx = dist.topk(k, largest=False).indices  # [N, k]
+#     return knn_idx
 
+def knn_indices_from_pos(pos: torch.Tensor, k: int) -> torch.Tensor:
+    """
+    Compute k nearest neighbors (including self) from positions using FAISS.
+    Automatically uses GPU if available, otherwise falls back to CPU.
+
+    Args:
+        pos (torch.Tensor): [N, D] tensor of positions.
+        k (int): number of neighbors to return (including self).
+
+    Returns:
+        torch.Tensor: [N, k] tensor of neighbor indices.
+    """
+    
+    pos_np = pos.cpu().numpy().astype('float32')
+    d = pos_np.shape[1]
+
+    # Build FAISS index (GPU if available, otherwise CPU)
+    try:
+        # Try GPU first
+        res = faiss.StandardGpuResources()
+        index = faiss.GpuIndexFlatL2(res, d)
+        print("   Using GPU for kNN computation")
+    except (RuntimeError, AttributeError) as e:
+        # Fall back to CPU if GPU not available
+        print(f"   ⚠️  GPU not available ({type(e).__name__}), falling back to CPU for kNN computation")
+        index = faiss.IndexFlatL2(d)
+    
+    index.add(pos_np)
+
+    # Search k neighbors
+    D, I = index.search(pos_np, k)
+
+    return torch.from_numpy(I)
 
 def build_knn_features(X: torch.Tensor, knn_idx: torch.Tensor) -> torch.Tensor:
     """Expand features using neighbors."""
@@ -88,39 +122,134 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     os.makedirs(cache_dir, exist_ok=True)
 
     # -------------------------------
-    # 1. Build unique dataset hash
+    # 1. Build unique dataset hash from DatasetGenerator config
     # -------------------------------
-    dataset_str = (
-        f"{args.toy_dataset}_{args.total_frames}_{args.img_size}_"
-        f"{args.num_points}_{args.outer_radius}_{args.inner_radius}_"
-        f"{args.num_rotations}_{args.tau}_{args.filter_size}"
-    )
-    dataset_hash = hashlib.md5(dataset_str.encode()).hexdigest()
+    # Use the same hash function as DatasetGenerator for consistency
+    from dsec_utils import generate_dataset_hash
+    
+    # Build config dict with all relevant parameters
+    config_dict = {
+        'shape_class': 'star8',
+        'total_frames': args.total_frames,
+        'image_width': args.img_size[1],
+        'image_height': args.img_size[0],
+        'num_points': args.num_points,
+        'outer_radius': args.outer_radius,
+        'inner_radius': args.inner_radius,
+        'number_of_rotations': args.num_rotations,
+        'frame_time_us': 1000,  # Fixed for now, could be made configurable
+        'event_generation_method': getattr(args, 'event_generation_method', 'synthetic'),
+        # Texture parameters (if/when added)
+        'foreground_texture': getattr(args, 'foreground_texture', None),
+        'background_texture': getattr(args, 'background_texture', None),
+        'fg_image_path': getattr(args, 'fg_image_path', None),
+        'bg_image_path': getattr(args, 'bg_image_path', None),
+        'use_random_dtd_texture': getattr(args, 'use_random_dtd_texture', False),
+        'dtd_texture_mode': getattr(args, 'dtd_texture_mode', 'both'),
+        'random_seed': getattr(args, 'random_seed', None),
+        # Add feature computation parameters to hash
+        'tau': args.tau,
+        'filter_size': args.filter_size,
+    }
+    
+    dataset_hash = generate_dataset_hash(**config_dict)
     dataset_path = os.path.join(cache_dir, f"{dataset_hash}_data.pt")
+    
+    # Print dataset configuration
+    print("\n" + "="*70)
+    print("📋 DATASET GENERATION CONFIG")
+    print("="*70)
+    print(f"🔑 Hash: {dataset_hash[:12]}...")
+    print(f"\n🎯 Shape Parameters:")
+    print(f"   shape_class: {config_dict['shape_class']}")
+    print(f"   num_points: {config_dict['num_points']}")
+    print(f"   outer_radius: {config_dict['outer_radius']}")
+    print(f"   inner_radius: {config_dict['inner_radius']}")
+    print(f"   number_of_rotations: {config_dict['number_of_rotations']}")
+    print(f"\n🖼️  Image Parameters:")
+    print(f"   width × height: {config_dict['image_width']} × {config_dict['image_height']}")
+    print(f"   total_frames: {config_dict['total_frames']}")
+    print(f"\n⏱️  Temporal:")
+    print(f"   frame_time_us: {config_dict['frame_time_us']}")
+    print(f"\n🎨 Texture:")
+    print(f"   foreground: {config_dict['foreground_texture']}")
+    print(f"   background: {config_dict['background_texture']}")
+    print(f"\n⚡ Events & Features:")
+    print(f"   event_method: {config_dict['event_generation_method']}")
+    print(f"   tau: {config_dict['tau']}, filter_size: {config_dict['filter_size']}")
+    print("="*70 + "\n")
 
     # -------------------------------
     # 2. Load or compute dataset
     # -------------------------------
-    if os.path.exists(dataset_path):
+    if os.path.exists(dataset_path) and not args.force_regenerate:
         print(f"🔹 Loading cached dataset from {dataset_path}")
-        data = torch.load(dataset_path)
+        data = torch.load(dataset_path, weights_only=False)
     else:
+        if args.force_regenerate and os.path.exists(dataset_path):
+            print(f"♻️  Force regenerate: Ignoring cached dataset at {dataset_path}")
         print("⚡ Generating new dataset...")
 
         if args.toy_dataset == "star8":
-            shape_movement = StarMovement(
-                total_frames=args.total_frames,
-                image_size=args.img_size,
-                face_color="black",
-                num_points=args.num_points,
-                outer_radius=args.outer_radius,
-                inner_radius=args.inner_radius,
-                number_of_rotations=args.num_rotations,
-            )
+            # Create config for DatasetGenerator
+            cfg = OmegaConf.create({
+                'shape_class': 'star8',
+                'seq_name': f'knn_mlp_{dataset_hash}',
+                'total_frames': args.total_frames,
+                'image_width': args.img_size[1],
+                'image_height': args.img_size[0],
+                'face_color': 'black',
+                'num_points': args.num_points,
+                'outer_radius': args.outer_radius,
+                'inner_radius': args.inner_radius,
+                'number_of_rotations': args.num_rotations,
+                'foreground_texture': None,
+                'background_texture': None,
+                'event_generation_method': getattr(args, 'event_generation_method', 'synthetic'),
+                'save_step': 20,
+                'frame_time_us': 1000,
+                'flow_dt_us': 20000,
+                'start_ts_us': 0,
+                'test_size': 0.0,  # Don't split - we'll do it ourselves
+                'outdir': 'toy_datasets/data',
+                'sanity_check': False,
+                'force_regenerate': False,
+                'generate_animation': False,
+                'auto_name': False,
+                # v2e parameters (used only if event_generation_method='v2e')
+                'v2e_pos_thres': 0.2,
+                'v2e_neg_thres': 0.2,
+                'v2e_sigma_thres': 0.,
+                'v2e_cutoff_hz': 0,
+                'v2e_leak_rate_hz': 0.0,
+                'v2e_shot_noise_rate_hz': 0.0,
+                'v2e_refractory_period_s': 0.0,
+                'v2e_seed': args.random_seed,
+                'v2e_photoreceptor_noise': False,
+                'v2e_leak_jitter_fraction': 0.0,
+                'v2e_noise_rate_cov_decades': 0.0,
+                'v2e_fg_gamma': 2.0,
+                'v2e_bg_gamma': 0.6,
+                'v2e_fg_brightness': 1.0,
+                'v2e_bg_brightness': 1.0,
+            })
+            
+            # Create generator
+            generator = DatasetGenerator(cfg)
+            
+            # Access the shape instance directly to generate events
+            # This avoids generating full dataset files when we only need events
+            generator._create_shape_instance()
+            data_array = generator._generate_events()
         else:
             raise ValueError(f"Unknown toy dataset: {args.toy_dataset}")
-
-        data_array = shape_movement.generate_events()
+        
+        # Normalize time so that frame_time_us distance equals 1.0 spatial unit
+        frame_time_us = cfg.frame_time_us
+        data_array['t'] = data_array['t'] / frame_time_us
+        print(f"⏱️  Normalized time: {frame_time_us} µs → 1.0 spatial unit")
+        print(f"   Time range: [{data_array['t'].min():.2f}, {data_array['t'].max():.2f}]")
+ 
         data = numpy2pyg_event_convertor(data_array)
         data["v"] = torch.tensor(np.array([data_array["v_x"], data_array["v_y"]])).T
 
@@ -143,11 +272,19 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     # -------------------------------
     knn_path = os.path.join(cache_dir, f"{dataset_hash}_k{args.k}_knn.pt")
 
-    if os.path.exists(knn_path):
+    if os.path.exists(knn_path) and not args.force_regenerate:
         print(f"🔹 Loading cached kNN index from {knn_path}")
         knn_idx = torch.load(knn_path)
     else:
-        print(f"⚡ Computing kNN index with k={args.k} ...")
+        if args.force_regenerate and os.path.exists(knn_path):
+            print(f"♻️  Force regenerate: Ignoring cached kNN index at {knn_path}")
+        num_nodes = data.pos.size(0)
+        pos_dim = data.pos.size(1)
+        print(f"⚡ Computing kNN index:")
+        print(f"   Number of events/nodes: {num_nodes:,}")
+        print(f"   k (neighbors): {args.k}")
+        print(f"   Position dimension: {pos_dim}")
+        print(f"   Total distance computations: {num_nodes * args.k:,}")
         knn_idx = knn_indices_from_pos(data.pos, args.k)
         torch.save(knn_idx, knn_path)
         print(f"💾 kNN index cached at {knn_path}")
@@ -184,7 +321,12 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     else:
         raise ValueError(f"Unknown feature_type: {args.feature_type}")
 
-    print("features shape:", features.shape, flush=True)
+    print(f"📊 Feature statistics:")
+    print(f"   Feature shape: {features.shape}")
+    print(f"   Number of nodes: {features.size(0):,}")
+    print(f"   Feature dimension: {features.size(1)}")
+    print(f"   Total features (nodes × k × dim): {features.size(0) * args.k * features.size(1):,}")
+    
     if args.relative_coordinates:
         if args.feature_type == "original":
             relative_feat_indices = [0, 1]
@@ -249,7 +391,9 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     data_array = pyg2numpy_event_convertor(data)
     data_array_train = data_array[idx_train]
     data_array_val = data_array[idx_val]
-    return X_train, Y_train, X_val, Y_val, data_array_train, data_array_val
+    
+    # Return config_dict for wandb logging
+    return X_train, Y_train, X_val, Y_val, data_array_train, data_array_val, config_dict
 
 
 # -------------------------------
@@ -318,7 +462,7 @@ def train(args):
     # Create dataset
     # -------------------
 
-    X_train, Y_train, X_val, Y_val, _ , _ = create_toy_dataset(args)
+    X_train, Y_train, X_val, Y_val, _, _, dataset_config = create_toy_dataset(args)
     train_loader = DataLoader(
         TensorDataset(X_train, Y_train), batch_size=args.batch_size, shuffle=True
     )
@@ -329,16 +473,29 @@ def train(args):
     # -------------------
     if not os.path.exists(os.path.join(args.log_dir, args.project)):
         os.makedirs(os.path.join(args.log_dir, args.project), exist_ok=True)
+    
+    # Merge dataset config into wandb config
+    wandb_config = vars(args).copy()
+    wandb_config['dataset_config'] = dataset_config
+    
     wandb_logger = pl.loggers.WandbLogger(
         save_dir=os.path.join(args.log_dir, args.project),
         project=args.project,
-        config=vars(args),
+        config=wandb_config,
         log_model=False,
         offline=not args.online,
     )
     run_id = wandb_logger.experiment.id  # unique wandb run ID
 
-    print(f"🚀 Starting run {run_id} with config: {args}", flush=True)
+    # Convert args to OmegaConf for pretty printing
+    args_dict = vars(args)
+    args_conf = OmegaConf.create(args_dict)
+    
+    print("\n" + "="*70)
+    print(f"🚀 TRAINING RUN: {run_id}")
+    print("="*70)
+    print(OmegaConf.to_yaml(args_conf))
+    print("="*70 + "\n")
 
     # -------------------
     # Seed everything. Note that this does not make training entirely
@@ -421,7 +578,7 @@ def evaluate_run(run_id: str, args):
     # -------------------
     # Create dataset
     # -------------------
-    X_train, Y_train, X_val, Y_val, data_array_train, data_array_val = create_toy_dataset(args)
+    X_train, Y_train, X_val, Y_val, data_array_train, data_array_val, _ = create_toy_dataset(args)
     train_loader = DataLoader(
         TensorDataset(X_train, Y_train), batch_size=args.batch_size
     )
@@ -522,6 +679,18 @@ if __name__ == "__main__":
         help="Toy dataset to use from: star8",
     )
     parser.add_argument(
+        "--event_generation_method",
+        type=str,
+        default="synthetic",
+        choices=["synthetic", "v2e"],
+        help="Event generation method: 'synthetic' (fast) or 'v2e' (realistic DVS simulation)",
+    )
+    parser.add_argument(
+        "--force_regenerate",
+        action="store_true",
+        help="Force regenerate dataset and kNN index even if cached versions exist",
+    )
+    parser.add_argument(
         "--img_size", type=int, nargs=2, default=[256, 256], help="Image size (H, W)"
     )
     parser.add_argument(
@@ -556,8 +725,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test_split_seed",
         type=int,
+        default=None,
+        help="Random seed for test/train split (defaults to --random_seed if not set)",
+    )
+    parser.add_argument(
+        "--random_seed",
+        type=int,
         default=42,
-        help="Random seed for test/train split",
+        help="Master random seed for reproducibility (DTD textures, v2e, train/test split if not specified separately)",
     )
 
     # Model hyperparams
@@ -602,6 +777,10 @@ if __name__ == "__main__":
 
     # Parse args
     args = parser.parse_args()
+    
+    # Use random_seed as default for other seeds if not explicitly set
+    if args.test_split_seed is None:
+        args.test_split_seed = args.random_seed
 
     if args.eval_run_id is not None:
         evaluate_run(args.eval_run_id, args)

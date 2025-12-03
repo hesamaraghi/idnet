@@ -21,6 +21,23 @@ class StarMovement(ShapeMovementBase):
         background_texture_params=None,
         **kwargs
     ):
+        params = {
+            "total_frames": total_frames,
+            "image_size": image_size,
+            "face_color": face_color,
+            "num_points": num_points,
+            "outer_radius": outer_radius,
+            "inner_radius": inner_radius,
+            "number_of_rotations": number_of_rotations,
+            "foreground_texture": foreground_texture,
+            "background_texture": background_texture,
+            "foreground_texture_params": foreground_texture_params,
+            "background_texture_params": background_texture_params,
+        }
+        if kwargs:
+            params.update(kwargs)
+        print("StarMovement init params:", params)
+        
         
         self.num_points = num_points
         self.outer_radius = outer_radius
