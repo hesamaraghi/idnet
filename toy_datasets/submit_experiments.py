@@ -15,31 +15,31 @@ def main():
     # -----------------------------------------
     # Define search space (edit these lists)
     # -----------------------------------------
-    # search_space = {
-    #     "feature_type": ["both"],#"both_time_augmented"],#"original_time_augmented", "original_time_augmented_repeated_augmented", "original", "filter", "eig","both"],
-    #     "tau": [30.0],# 1.0, 5.0,
-    #     "filter_size": [7],
-    #     "toy_dataset": ["star8"],
-    #     "test_train_split": ["temporal", "random"],
-    #     "test_split_seed": [42, 420, 4200, 42000, 420000, 0, 10, 100, 1000, 10000],
-    #     "k": [10],
-    #     "hidden_dim": [128],
-    #     "lr": [1e-4],
-    #     "max_epochs": [500],
-    #     "batch_size": [16], 
-    #     "relative_coordinates": [True],
-    #     "project": ["knn-mlp-regression-relative-multiseed"],
-    #     "online" : [False],
-    # }
     search_space = {
-        "entity": ["haraghi"],
-        "project": ["knn-mlp-regression-relative-multiseed"],
-        "eval_run_id": [
-            "7gp7i7wa",
-            # "jq88h8jp",
-            # "top9wmcg",
-        ]
+        "feature_type": ["both"],#"both_time_augmented"],#"original_time_augmented", "original_time_augmented_repeated_augmented", "original", "filter", "eig","both"],
+        "tau": [0.003, 0.03, 0.3, 3.0, 30.0, 300.0],# 1.0, 5.0,
+        "filter_size": [7],
+        "toy_dataset": ["star8"],
+        "test_train_split": ["temporal"], #"random", "temporal"
+        "test_split_seed": [42, 420, 4200, 42000, 420000, 0, 10, 100, 1000, 10000],
+        "k": [50],
+        "hidden_dim": [128],
+        "lr": [1e-4],
+        "max_epochs": [500],
+        "batch_size": [16], 
+        "relative_coordinates": [True],
+        "project": ["knn-mlp-regression-relative-multiseed-TAU"],
+        "online" : [False],
     }
+    # search_space = {
+    #     "entity": ["haraghi"],
+    #     "project": ["knn-mlp-regression-relative-multiseed"],
+    #     "eval_run_id": [
+    #         "7gp7i7wa",
+    #         # "jq88h8jp",
+    #         # "top9wmcg",
+    #     ]
+    # }
 
     # -----------------------------------------
     # Generate all combinations
