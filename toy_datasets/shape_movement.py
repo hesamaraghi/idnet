@@ -742,6 +742,7 @@ class ShapeMovementBase(ABC):
         bg_gamma: float = 0.6,
         fg_brightness_scale: float = 1.0,
         bg_brightness_scale: float = 1.0,
+        temporal_filter_percent: float = None,
     ) -> np.ndarray:
         """
         Generate realistic DVS events using v2e simulator.
@@ -764,6 +765,10 @@ class ShapeMovementBase(ABC):
             bg_gamma: Gamma correction for background (>1 darkens, <1 brightens, default=0.8)
             fg_brightness_scale: Foreground brightness multiplier (0-1, lower=darker)
             bg_brightness_scale: Background brightness multiplier (0-1, lower=darker)
+            temporal_filter_percent: If set, keep only events within [frame_time, frame_time + window] where
+                                    window = (temporal_filter_percent/100 * frame_time_us). For example, 4.0 with 
+                                    frame_time_us=1000 means keep events in [1000, 1040], [2000, 2040], etc.
+                                    None = no filtering (default).
             
         Returns:
             np.ndarray with dtype [('x', int16), ('y', int16), ('t', int64), 
@@ -811,6 +816,26 @@ class ShapeMovementBase(ABC):
         v2e_events = v2e_gen.generate_events_from_frames(frames, frame_times_us)
         
         print(f"Generated {len(v2e_events)} v2e events")
+        
+        # Apply temporal filtering if requested
+        if temporal_filter_percent is not None:
+            print(f"Applying temporal filter: keeping events in first {temporal_filter_percent}% of each frame")
+            
+            # Get event times
+            event_times = v2e_events['t']
+            original_count = len(event_times)
+            
+            # Calculate time within each frame using modulo
+            min_time = event_times.min()
+                        
+            time_within_frame = (event_times - min_time) % frame_time_us
+            
+            # Keep only events in first X% of each frame
+            window_size_us = frame_time_us * (temporal_filter_percent / 100.0)
+            keep_mask = time_within_frame < window_size_us
+            
+            v2e_events = v2e_events[keep_mask]
+            print(f"After temporal filtering: {len(v2e_events)} events ({100*len(v2e_events)/original_count:.1f}% retained)")
         
         # Add optical flow to events (optional)
         if skip_optical_flow:
@@ -871,8 +896,7 @@ class ShapeMovementBase(ABC):
         events_with_flow['p'] = events['p']
         
         # Compute optical flow for each event
-        # Group events by approximate frame for efficiency
-        # Fix issue #2: Use known frame_time_us from simulation, not inferred from events
+        # Fix issue: Use known frame_time_us from simulation, not inferred from events
         # V2E uses absolute timestamps based on frame_time_us parameter
         
         # Velocity scale factor: convert from pixels/frame to pixels/millisecond

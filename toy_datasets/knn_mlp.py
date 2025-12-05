@@ -109,6 +109,143 @@ def build_relative_knn_features(
 
 
 # -------------------------------
+# Configuration Builder
+# -------------------------------
+def build_dataset_config(args, for_hash_only=False):
+    """
+    Build dataset configuration dictionary from args.
+    
+    Args:
+        args: Argument namespace with dataset parameters
+        for_hash_only: If True, only include parameters needed for hash computation
+                      If False, include all parameters for DatasetGenerator
+    
+    Returns:
+        OmegaConf config dict or plain dict (for hash computation)
+    """
+    # Handle DTD texture configuration
+    # Don't pre-select textures here - let DatasetGenerator handle it with proper seeds
+    foreground_texture = getattr(args, 'foreground_texture', None)
+    background_texture = getattr(args, 'background_texture', None)
+    fg_image_path = getattr(args, 'fg_image_path', None)
+    bg_image_path = getattr(args, 'bg_image_path', None)
+    
+    if getattr(args, 'use_random_dtd_texture', False):
+        # Set texture type to 'image' - DatasetGenerator will select the actual files
+        dtd_mode = getattr(args, 'dtd_texture_mode', 'both')
+        
+        if dtd_mode in ['foreground', 'both']:
+            foreground_texture = 'image'
+            # fg_image_path will be None - DatasetGenerator will select it
+            
+        if dtd_mode in ['background', 'both']:
+            background_texture = 'image'
+            # bg_image_path will be None - DatasetGenerator will select it
+    
+    # Core parameters for hash computation
+    hash_params = {
+        'shape_class': 'star8',
+        'total_frames': args.total_frames,
+        'image_width': args.img_size[1],
+        'image_height': args.img_size[0],
+        'num_points': args.num_points,
+        'outer_radius': args.outer_radius,
+        'inner_radius': args.inner_radius,
+        'number_of_rotations': args.num_rotations,
+        'frame_time_us': 1000,  # Fixed for now, could be made configurable
+        'event_generation_method': getattr(args, 'event_generation_method', 'synthetic'),
+        # Texture parameters
+        'foreground_texture': foreground_texture,
+        'background_texture': background_texture,
+        'fg_image_path': fg_image_path,
+        'bg_image_path': bg_image_path,
+        'use_random_dtd_texture': getattr(args, 'use_random_dtd_texture', False),
+        'dtd_texture_mode': getattr(args, 'dtd_texture_mode', 'both'),
+        'dtd_root': getattr(args, 'dtd_root', 'data/dtd/images'),
+        'random_seed': getattr(args, 'random_seed', None),
+        # v2e parameters that affect the dataset
+        'v2e_pos_thres': getattr(args, 'v2e_pos_thres', 0.2),
+        'v2e_neg_thres': getattr(args, 'v2e_neg_thres', 0.2),
+        'v2e_sigma_thres': getattr(args, 'v2e_sigma_thres', 0.0),
+        'v2e_cutoff_hz': getattr(args, 'v2e_cutoff_hz', 0),
+        'v2e_leak_rate_hz': getattr(args, 'v2e_leak_rate_hz', 0.0),
+        'v2e_shot_noise_rate_hz': getattr(args, 'v2e_shot_noise_rate_hz', 0.0),
+        'v2e_refractory_period_s': getattr(args, 'v2e_refractory_period_s', 0.0),
+        'v2e_seed': getattr(args, 'v2e_seed', args.random_seed),
+        'v2e_photoreceptor_noise': getattr(args, 'v2e_photoreceptor_noise', False),
+        'v2e_leak_jitter_fraction': getattr(args, 'v2e_leak_jitter_fraction', 0.0),
+        'v2e_noise_rate_cov_decades': getattr(args, 'v2e_noise_rate_cov_decades', 0.0),
+        'v2e_fg_gamma': getattr(args, 'v2e_fg_gamma', 2.0),
+        'v2e_bg_gamma': getattr(args, 'v2e_bg_gamma', 0.6),
+        'v2e_fg_brightness': getattr(args, 'v2e_fg_brightness', 1.0),
+        'v2e_bg_brightness': getattr(args, 'v2e_bg_brightness', 1.0),
+        'v2e_temporal_filter_percent': getattr(args, 'v2e_temporal_filter_percent', None),
+        # Feature computation parameters
+        'tau': args.tau,
+        'filter_size': args.filter_size,
+    }
+    
+    if for_hash_only:
+        return hash_params
+    
+    # Full configuration for DatasetGenerator
+    from dsec_utils import generate_dataset_hash
+    dataset_hash = generate_dataset_hash(**hash_params)
+    
+    full_config = {
+        'shape_class': 'star8',
+        'seq_name': f'knn_mlp_{dataset_hash}',
+        'total_frames': args.total_frames,
+        'image_width': args.img_size[1],
+        'image_height': args.img_size[0],
+        'face_color': 'black',
+        'num_points': args.num_points,
+        'outer_radius': args.outer_radius,
+        'inner_radius': args.inner_radius,
+        'number_of_rotations': args.num_rotations,
+        'foreground_texture': foreground_texture,
+        'background_texture': background_texture,
+        'fg_image_path': fg_image_path,
+        'bg_image_path': bg_image_path,
+        'use_random_dtd_texture': getattr(args, 'use_random_dtd_texture', False),
+        'dtd_texture_mode': getattr(args, 'dtd_texture_mode', 'both'),
+        'dtd_root': getattr(args, 'dtd_root', 'data/dtd/images'),
+        'dtd_fg_seed': getattr(args, 'random_seed', None),  # Use same seed as dataset
+        'dtd_bg_seed': (getattr(args, 'random_seed', None) + 1) if getattr(args, 'random_seed', None) is not None else None,
+        'event_generation_method': getattr(args, 'event_generation_method', 'synthetic'),
+        'save_step': 20,
+        'frame_time_us': 1000,
+        'flow_dt_us': 20000,
+        'start_ts_us': 0,
+        'test_size': 0.0,  # Don't split - we'll do it ourselves
+        'outdir': 'toy_datasets/data',
+        'sanity_check': False,
+        'force_regenerate': False,
+        'generate_animation': False,
+        'auto_name': False,
+        # v2e parameters (used only if event_generation_method='v2e')
+        'v2e_pos_thres': 0.2,
+        'v2e_neg_thres': 0.2,
+        'v2e_sigma_thres': 0.,
+        'v2e_cutoff_hz': 0,
+        'v2e_leak_rate_hz': 0.0,
+        'v2e_shot_noise_rate_hz': 0.0,
+        'v2e_refractory_period_s': 0.0,
+        'v2e_seed': args.random_seed,
+        'v2e_photoreceptor_noise': False,
+        'v2e_leak_jitter_fraction': 0.0,
+        'v2e_noise_rate_cov_decades': 0.0,
+        'v2e_fg_gamma': 2.0,
+        'v2e_bg_gamma': 0.6,
+        'v2e_fg_brightness': 1.0,
+        'v2e_bg_brightness': 1.0,
+        'v2e_temporal_filter_percent': getattr(args, 'v2e_temporal_filter_percent', None),
+    }
+    
+    return OmegaConf.create(full_config)
+
+
+# -------------------------------
 # Create toy dataset
 # -------------------------------
 def create_toy_dataset(args, cache_dir="dataset_cache"):
@@ -127,30 +264,8 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     # Use the same hash function as DatasetGenerator for consistency
     from dsec_utils import generate_dataset_hash
     
-    # Build config dict with all relevant parameters
-    config_dict = {
-        'shape_class': 'star8',
-        'total_frames': args.total_frames,
-        'image_width': args.img_size[1],
-        'image_height': args.img_size[0],
-        'num_points': args.num_points,
-        'outer_radius': args.outer_radius,
-        'inner_radius': args.inner_radius,
-        'number_of_rotations': args.num_rotations,
-        'frame_time_us': 1000,  # Fixed for now, could be made configurable
-        'event_generation_method': getattr(args, 'event_generation_method', 'synthetic'),
-        # Texture parameters (if/when added)
-        'foreground_texture': getattr(args, 'foreground_texture', None),
-        'background_texture': getattr(args, 'background_texture', None),
-        'fg_image_path': getattr(args, 'fg_image_path', None),
-        'bg_image_path': getattr(args, 'bg_image_path', None),
-        'use_random_dtd_texture': getattr(args, 'use_random_dtd_texture', False),
-        'dtd_texture_mode': getattr(args, 'dtd_texture_mode', 'both'),
-        'random_seed': getattr(args, 'random_seed', None),
-        # Add feature computation parameters to hash
-        'tau': args.tau,
-        'filter_size': args.filter_size,
-    }
+    # Build config dict with all relevant parameters (for hashing)
+    config_dict = build_dataset_config(args, for_hash_only=True)
     
     dataset_hash = generate_dataset_hash(**config_dict)
     dataset_path = os.path.join(cache_dir, f"{dataset_hash}_data.pt")
@@ -172,8 +287,19 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     print(f"\n⏱️  Temporal:")
     print(f"   frame_time_us: {config_dict['frame_time_us']}")
     print(f"\n🎨 Texture:")
-    print(f"   foreground: {config_dict['foreground_texture']}")
-    print(f"   background: {config_dict['background_texture']}")
+    if config_dict.get('use_random_dtd_texture'):
+        print(f"   use_random_dtd_texture: {config_dict['use_random_dtd_texture']}")
+        print(f"   dtd_texture_mode: {config_dict['dtd_texture_mode']}")
+        print(f"   dtd_root: {config_dict['dtd_root']}")
+        print(f"   random_seed: {config_dict['random_seed']}")
+        # Note: Actual selected texture paths will be shown after dataset generation
+    else:
+        print(f"   foreground: {config_dict['foreground_texture']}")
+        print(f"   background: {config_dict['background_texture']}")
+        if config_dict.get('fg_image_path'):
+            print(f"   fg_image_path: {config_dict['fg_image_path']}")
+        if config_dict.get('bg_image_path'):
+            print(f"   bg_image_path: {config_dict['bg_image_path']}")
     print(f"\n⚡ Events & Features:")
     print(f"   event_method: {config_dict['event_generation_method']}")
     print(f"   tau: {config_dict['tau']}, filter_size: {config_dict['filter_size']}")
@@ -182,6 +308,9 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     # -------------------------------
     # 2. Load or compute dataset
     # -------------------------------
+    generator = None  # Will be created if needed for animation
+    frame_time_us = config_dict['frame_time_us']  # Always available from config_dict
+    
     if os.path.exists(dataset_path) and not args.force_regenerate:
         print(f"🔹 Loading cached dataset from {dataset_path}")
         data = torch.load(dataset_path, weights_only=False)
@@ -191,48 +320,8 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         print("⚡ Generating new dataset...")
 
         if args.toy_dataset == "star8":
-            # Create config for DatasetGenerator
-            cfg = OmegaConf.create({
-                'shape_class': 'star8',
-                'seq_name': f'knn_mlp_{dataset_hash}',
-                'total_frames': args.total_frames,
-                'image_width': args.img_size[1],
-                'image_height': args.img_size[0],
-                'face_color': 'black',
-                'num_points': args.num_points,
-                'outer_radius': args.outer_radius,
-                'inner_radius': args.inner_radius,
-                'number_of_rotations': args.num_rotations,
-                'foreground_texture': None,
-                'background_texture': None,
-                'event_generation_method': getattr(args, 'event_generation_method', 'synthetic'),
-                'save_step': 20,
-                'frame_time_us': 1000,
-                'flow_dt_us': 20000,
-                'start_ts_us': 0,
-                'test_size': 0.0,  # Don't split - we'll do it ourselves
-                'outdir': 'toy_datasets/data',
-                'sanity_check': False,
-                'force_regenerate': False,
-                'generate_animation': False,
-                'auto_name': False,
-                # v2e parameters (used only if event_generation_method='v2e')
-                'v2e_pos_thres': 0.2,
-                'v2e_neg_thres': 0.2,
-                'v2e_sigma_thres': 0.,
-                'v2e_cutoff_hz': 0,
-                'v2e_leak_rate_hz': 0.0,
-                'v2e_shot_noise_rate_hz': 0.0,
-                'v2e_refractory_period_s': 0.0,
-                'v2e_seed': args.random_seed,
-                'v2e_photoreceptor_noise': False,
-                'v2e_leak_jitter_fraction': 0.0,
-                'v2e_noise_rate_cov_decades': 0.0,
-                'v2e_fg_gamma': 2.0,
-                'v2e_bg_gamma': 0.6,
-                'v2e_fg_brightness': 1.0,
-                'v2e_bg_brightness': 1.0,
-            })
+            # Create config for DatasetGenerator using shared builder
+            cfg = build_dataset_config(args, for_hash_only=False)
             
             # Create generator
             generator = DatasetGenerator(cfg)
@@ -241,21 +330,34 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
             # This avoids generating full dataset files when we only need events
             generator._create_shape_instance()
             data_array = generator._generate_events()
+            
+            # Update config_dict with actual selected texture paths
+            # After _create_shape_instance() -> _build_texture_params(), the paths are in generator.config
+            if generator.config.get('fg_image_path'):
+                config_dict['fg_image_path'] = generator.config.fg_image_path
+            if generator.config.get('bg_image_path'):
+                config_dict['bg_image_path'] = generator.config.bg_image_path
+            
+            # Print selected texture paths if DTD was used
+            if config_dict.get('use_random_dtd_texture'):
+                print("\n" + "="*70)
+                print("🎨 SELECTED DTD TEXTURES")
+                print("="*70)
+                if config_dict.get('fg_image_path'):
+                    print(f"   Foreground: {config_dict['fg_image_path']}")
+                if config_dict.get('bg_image_path'):
+                    print(f"   Background: {config_dict['bg_image_path']}")
+                print("="*70 + "\n")
         else:
             raise ValueError(f"Unknown toy dataset: {args.toy_dataset}")
         
-        # Normalize time so that frame_time_us distance equals 1.0 spatial unit
-        frame_time_us = cfg.frame_time_us
-        data_array['t'] = data_array['t'] / frame_time_us
-        print(f"⏱️  Normalized time: {frame_time_us} µs → 1.0 spatial unit")
-        print(f"   Time range: [{data_array['t'].min():.2f}, {data_array['t'].max():.2f}]")
- 
         data = numpy2pyg_event_convertor(data_array)
-        data["v"] = torch.tensor(np.array([data_array["v_x"], data_array["v_y"]])).T
-
-        # Features
+        data["v"] = torch.tensor(np.array([data_array["v_x"], data_array["v_y"]])).T     
+        # Multiply tau by frame_time_us to get actual time constant in us
+        # Compute Harris features
+        tau_us = args.tau * frame_time_us
         harris_rec = HarrisRecursive(
-            tau=args.tau, filter_size=args.filter_size, image_size=args.img_size
+            tau=tau_us, filter_size=args.filter_size, image_size=args.img_size
         )
         harris_rec(data_array)
         eig1 = harris_rec.eig1
@@ -266,6 +368,49 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
 
         torch.save(data, dataset_path)
         print(f"💾 Dataset cached at {dataset_path}")
+    
+    # -------------------------------
+    # Save config file (always, even if dataset was cached)
+    # -------------------------------
+    config_save_path = os.path.join(cache_dir, f"{dataset_hash}_config.yaml")
+    if not os.path.exists(config_save_path) or args.force_regenerate:
+        config_to_save = OmegaConf.create(config_dict)
+        OmegaConf.save(config_to_save, config_save_path)
+        print(f"📋 Dataset config saved at {config_save_path}")
+    else:
+        print(f"📋 Config file already exists at {config_save_path}")
+    
+    # -------------------------------
+    # Optionally create animation (always, even if dataset was cached)
+    # -------------------------------
+    if args.create_animation:
+        animation_path = os.path.join(cache_dir, f"{dataset_hash}_animation.gif")
+        if not os.path.exists(animation_path) or args.force_regenerate:
+            print("🎬 Creating dataset animation...")
+            try:
+                # If generator wasn't created above (dataset was cached), create it now
+                if generator is None:
+                    if args.toy_dataset == "star8":
+                        cfg = build_dataset_config(args, for_hash_only=False)
+                        generator = DatasetGenerator(cfg)
+                        generator._create_shape_instance()
+                
+                # Use texture-aware animation if textures are enabled
+                if config_dict.get('foreground_texture') or config_dict.get('background_texture'):
+                    print("   Creating animation with textures...")
+                    frames = generator.shape_instance.create_animation_with_textures(frame_step=20, fps=10)
+                    # Save frames as GIF using imageio
+                    import imageio
+                    imageio.mimsave(animation_path, frames, fps=10, loop=0)
+                else:
+                    print("   Creating animation without textures...")
+                    anim = generator.shape_instance.create_animation(frame_step=20, interval=100)
+                    anim.save(animation_path, writer='pillow', fps=10)
+                print(f"🎞️  Animation saved at {animation_path}")
+            except Exception as e:
+                print(f"⚠️  Could not create animation: {e}")
+        else:
+            print(f"🎞️  Animation already exists at {animation_path}")
 
     # -------------------------------
     # 3. Cache KNN index as well
@@ -284,7 +429,15 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         print(f"   Number of events/nodes: {num_nodes:,}")
         print(f"   k (neighbors): {args.k}")
         print(f"   Position dimension: {pos_dim}")
-        print(f"   Total distance computations: {num_nodes * args.k:,}")
+        print(f"   Spatial extent:  x[{data.pos[:,0].min().item():.1f}, {data.pos[:,0].max().item():.1f}]")
+        print(f"                    y[{data.pos[:,1].min().item():.1f}, {data.pos[:,1].max().item():.1f}]")
+        print(f"   Temporal extent: t[{data.pos[:,2].min().item():.2f}, {data.pos[:,2].max().item():.2f}]")
+        
+        # Normalize time so that frame_time_us distance equals 1.0 spatial unit
+        data.pos[:, 2] = data.pos[:, 2] / frame_time_us
+        print("   Normalized temporal extent after scaling:", flush=True)
+        print(f"                    t[{data.pos[:,2].min().item():.2f}, {data.pos[:,2].max().item():.2f}]")
+        print("   Computing kNN indices (this may take a while for large datasets)...", flush=True)
         knn_idx = knn_indices_from_pos(data.pos, args.k)
         torch.save(knn_idx, knn_path)
         print(f"💾 kNN index cached at {knn_path}")
@@ -691,6 +844,11 @@ if __name__ == "__main__":
         help="Force regenerate dataset and kNN index even if cached versions exist",
     )
     parser.add_argument(
+        "--create_animation",
+        action="store_true",
+        help="Create and save shape animation when generating new dataset",
+    )
+    parser.add_argument(
         "--img_size", type=int, nargs=2, default=[256, 256], help="Image size (H, W)"
     )
     parser.add_argument(
@@ -710,6 +868,149 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num_rotations", type=int, default=2, help="Number of rotations of the star"
+    )
+    
+    # Texture params
+    parser.add_argument(
+        "--use_random_dtd_texture",
+        action="store_true",
+        help="Use random textures from DTD (Describable Textures Dataset) for foreground/background",
+    )
+    parser.add_argument(
+        "--dtd_texture_mode",
+        type=str,
+        default="both",
+        choices=["foreground", "background", "both"],
+        help="Which parts to apply DTD textures to: foreground (star), background, or both",
+    )
+    parser.add_argument(
+        "--foreground_texture",
+        type=str,
+        default=None,
+        help="Specific texture type for foreground (if not using random DTD)",
+    )
+    parser.add_argument(
+        "--background_texture",
+        type=str,
+        default=None,
+        help="Specific texture type for background (if not using random DTD)",
+    )
+    parser.add_argument(
+        "--fg_image_path",
+        type=str,
+        default=None,
+        help="Path to custom foreground texture image",
+    )
+    parser.add_argument(
+        "--bg_image_path",
+        type=str,
+        default=None,
+        help="Path to custom background texture image",
+    )
+    parser.add_argument(
+        "--dtd_root",
+        type=str,
+        default="data/dtd/images",
+        help="Path to DTD (Describable Textures Dataset) root directory",
+    )
+    parser.add_argument(
+        "--v2e_temporal_filter_percent",
+        type=float,
+        default=None,
+        help="V2E temporal filter: keep only events within [frame_time, frame_time + X%%]. "
+             "For example, 4.0 keeps events in [1000us, 1040us] for frame_time_us=1000. "
+             "None = no filtering (default).",
+    )
+    
+    # V2E-specific parameters (only used when event_generation_method='v2e')
+    parser.add_argument(
+        "--v2e_pos_thres",
+        type=float,
+        default=0.2,
+        help="V2E positive contrast threshold (default: 0.2)",
+    )
+    parser.add_argument(
+        "--v2e_neg_thres",
+        type=float,
+        default=0.2,
+        help="V2E negative contrast threshold (default: 0.2)",
+    )
+    parser.add_argument(
+        "--v2e_sigma_thres",
+        type=float,
+        default=0.0,
+        help="V2E threshold mismatch sigma (default: 0.0)",
+    )
+    parser.add_argument(
+        "--v2e_cutoff_hz",
+        type=float,
+        default=0,
+        help="V2E photoreceptor cutoff frequency in Hz (default: 0)",
+    )
+    parser.add_argument(
+        "--v2e_leak_rate_hz",
+        type=float,
+        default=0.0,
+        help="V2E leak event rate in Hz (default: 0.0)",
+    )
+    parser.add_argument(
+        "--v2e_shot_noise_rate_hz",
+        type=float,
+        default=0.0,
+        help="V2E shot noise rate in Hz (default: 0.0)",
+    )
+    parser.add_argument(
+        "--v2e_refractory_period_s",
+        type=float,
+        default=0.0,
+        help="V2E refractory period in seconds (default: 0.0)",
+    )
+    parser.add_argument(
+        "--v2e_seed",
+        type=int,
+        default=None,
+        help="V2E random seed (defaults to --random_seed if not set)",
+    )
+    parser.add_argument(
+        "--v2e_photoreceptor_noise",
+        action="store_true",
+        help="V2E: use photoreceptor noise model (more realistic)",
+    )
+    parser.add_argument(
+        "--v2e_leak_jitter_fraction",
+        type=float,
+        default=0.0,
+        help="V2E leak event timing jitter as fraction of interval (default: 0.0)",
+    )
+    parser.add_argument(
+        "--v2e_noise_rate_cov_decades",
+        type=float,
+        default=0.0,
+        help="V2E spatial variation in noise rates in decades (default: 0.0)",
+    )
+    parser.add_argument(
+        "--v2e_fg_gamma",
+        type=float,
+        default=2.0,
+        help="V2E gamma correction for foreground (>1 darkens, <1 brightens, default: 2.0)",
+    )
+    parser.add_argument(
+        "--v2e_bg_gamma",
+        type=float,
+        default=0.6,
+        help="V2E gamma correction for background (>1 darkens, <1 brightens, default: 0.6)",
+    )
+    parser.add_argument(
+        "--v2e_fg_brightness",
+        type=float,
+        default=1.0,
+        help="V2E foreground brightness multiplier (0-1, lower=darker, default: 1.0)",
+    )
+    parser.add_argument(
+        "--v2e_bg_brightness",
+        type=float,
+        default=1.0,
+        help="V2E background brightness multiplier (0-1, lower=darker, default: 1.0)",
     )
 
     # Dataset params
@@ -779,8 +1080,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Use random_seed as default for other seeds if not explicitly set
+    # Use random_seed as default for other seeds if not explicitly set
     if args.test_split_seed is None:
         args.test_split_seed = args.random_seed
+    if args.v2e_seed is None:
+        args.v2e_seed = args.random_seed
 
     if args.eval_run_id is not None:
         evaluate_run(args.eval_run_id, args)

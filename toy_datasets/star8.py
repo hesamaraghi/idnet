@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
+import json
 
 from shape_movement import ShapeMovementBase
 
@@ -36,7 +37,8 @@ class StarMovement(ShapeMovementBase):
         }
         if kwargs:
             params.update(kwargs)
-        print("StarMovement init params:", params)
+        print("StarMovement init params:")
+        print(json.dumps(params, indent=2, default=str))
         
         
         self.num_points = num_points

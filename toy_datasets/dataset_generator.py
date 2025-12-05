@@ -118,7 +118,7 @@ class DatasetGenerator:
             raise ValueError(f"No categories found in DTD path: {dtd_path}")
         
         rng = np.random.RandomState(seed)
-        category = rng.choice(categories)
+        category = str(rng.choice(categories))
         
         category_path = os.path.join(dtd_path, category)
         images = sorted(glob.glob(os.path.join(category_path, "*.jpg")))
@@ -126,7 +126,7 @@ class DatasetGenerator:
         if not images:
             raise ValueError(f"No images found in category: {category}")
         
-        image_path = rng.choice(images)
+        image_path = str(rng.choice(images))
         
         print(f"Selected DTD texture (seed={seed}): {category}/{os.path.basename(image_path)}")
         
@@ -149,18 +149,23 @@ class DatasetGenerator:
         if use_dtd:
             if dtd_mode in ['fg', 'both']:
                 dtd_root = cfg.get('dtd_root', 'data/dtd')
-                dtd_fg_path = self._select_random_dtd_texture(dtd_root, cfg.get('random_seed'))
+                # Use dtd_fg_seed if provided, otherwise fall back to random_seed
+                fg_seed = cfg.get('dtd_fg_seed', cfg.get('random_seed'))
+                dtd_fg_path = str(self._select_random_dtd_texture(dtd_root, fg_seed))
                 cfg.foreground_texture = 'image'
                 cfg.fg_image_path = dtd_fg_path
-                print(f"🎨 Using DTD foreground texture: {dtd_fg_path}")
+                print(f"🎨 Using DTD foreground texture (seed={fg_seed}): {dtd_fg_path}")
             
             if dtd_mode in ['bg', 'both']:
                 dtd_root = cfg.get('dtd_root', 'data/dtd')
-                seed_offset = (cfg.get('random_seed') + 1) if cfg.get('random_seed') is not None else None
-                dtd_bg_path = self._select_random_dtd_texture(dtd_root, seed_offset)
+                # Use dtd_bg_seed if provided, otherwise fall back to random_seed + 1
+                bg_seed = cfg.get('dtd_bg_seed')
+                if bg_seed is None:
+                    bg_seed = (cfg.get('random_seed') + 1) if cfg.get('random_seed') is not None else None
+                dtd_bg_path = str(self._select_random_dtd_texture(dtd_root, bg_seed))
                 cfg.background_texture = 'image'
                 cfg.bg_image_path = dtd_bg_path
-                print(f"🎨 Using DTD background texture: {dtd_bg_path}")
+                print(f"🎨 Using DTD background texture (seed={bg_seed}): {dtd_bg_path}")
         
         # Build foreground texture params
         if cfg.get('foreground_texture'):
@@ -188,10 +193,11 @@ class DatasetGenerator:
                 }
             elif cfg.foreground_texture == 'image':
                 from matplotlib.colors import to_rgb
-                fill_color = to_rgb(cfg.fg_image_fill_color) if isinstance(cfg.fg_image_fill_color, str) else cfg.fg_image_fill_color
+                fg_fill_color = cfg.get('fg_image_fill_color', 'black')
+                fill_color = to_rgb(fg_fill_color) if isinstance(fg_fill_color, str) else fg_fill_color
                 foreground_params = {
                     'image_path': cfg.fg_image_path,
-                    'resize_mode': cfg.fg_image_resize_mode,
+                    'resize_mode': cfg.get('fg_image_resize_mode', 'fill'),
                     'fill_color': fill_color
                 }
         
@@ -221,10 +227,11 @@ class DatasetGenerator:
                 }
             elif cfg.background_texture == 'image':
                 from matplotlib.colors import to_rgb
-                fill_color = to_rgb(cfg.bg_image_fill_color) if isinstance(cfg.bg_image_fill_color, str) else cfg.bg_image_fill_color
+                bg_fill_color = cfg.get('bg_image_fill_color', 'white')
+                fill_color = to_rgb(bg_fill_color) if isinstance(bg_fill_color, str) else bg_fill_color
                 background_params = {
                     'image_path': cfg.bg_image_path,
-                    'resize_mode': cfg.bg_image_resize_mode,
+                    'resize_mode': cfg.get('bg_image_resize_mode', 'fill'),
                     'fill_color': fill_color
                 }
         
@@ -338,6 +345,7 @@ class DatasetGenerator:
                     bg_gamma=cfg.v2e_bg_gamma,
                     fg_brightness_scale=cfg.v2e_fg_brightness,
                     bg_brightness_scale=cfg.v2e_bg_brightness,
+                    temporal_filter_percent=cfg.get('v2e_temporal_filter_percent', None),
                 )
             except ImportError as e:
                 print(f"ERROR: v2e not available. {e}")
