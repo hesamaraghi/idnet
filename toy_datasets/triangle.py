@@ -23,6 +23,7 @@ class TriangleMovement(ShapeMovementBase):
         face_color="blue",
         speed=1.0, 
         movement_direction=0.0,
+        frame_time_us=1000,
     ):
         self.speed = speed
         self.movement_direction = movement_direction
@@ -31,7 +32,7 @@ class TriangleMovement(ShapeMovementBase):
         self.triangle_height = triangle_height
         self.added_height = added_height
         self.start_pos = start_pos
-        super().__init__(total_frames, image_size, face_color)
+        super().__init__(total_frames, image_size, face_color, frame_time_us=frame_time_us)
 
     def define_shape(self):
         vertices = np.array(
