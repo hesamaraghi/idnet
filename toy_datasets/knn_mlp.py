@@ -134,11 +134,11 @@ def build_dataset_config(args, for_hash_only=False):
         # Set texture type to 'image' - DatasetGenerator will select the actual files
         dtd_mode = getattr(args, 'dtd_texture_mode', 'both')
         
-        if dtd_mode in ['foreground', 'both']:
+        if dtd_mode in ['fg','foreground', 'both']:
             foreground_texture = 'image'
             # fg_image_path will be None - DatasetGenerator will select it
             
-        if dtd_mode in ['background', 'both']:
+        if dtd_mode in ['bg', 'background', 'both']:
             background_texture = 'image'
             # bg_image_path will be None - DatasetGenerator will select it
     
@@ -163,6 +163,11 @@ def build_dataset_config(args, for_hash_only=False):
         'dtd_texture_mode': getattr(args, 'dtd_texture_mode', 'both'),
         'dtd_root': getattr(args, 'dtd_root', 'data/dtd/images'),
         'random_seed': getattr(args, 'random_seed', None),
+        # Animation parameters (for consistency)
+        'animation_fps': getattr(args, 'animation_fps', 10),
+        'animation_frame_step': getattr(args, 'animation_frame_step', 10),
+        'event_animation_fps': getattr(args, 'event_animation_fps', 10),
+        'event_accumulation_ms': getattr(args, 'event_accumulation_ms', 10),
         # v2e parameters that affect the dataset
         'v2e_pos_thres': getattr(args, 'v2e_pos_thres', 0.2),
         'v2e_neg_thres': getattr(args, 'v2e_neg_thres', 0.2),
@@ -180,6 +185,9 @@ def build_dataset_config(args, for_hash_only=False):
         'v2e_fg_brightness': getattr(args, 'v2e_fg_brightness', 1.0),
         'v2e_bg_brightness': getattr(args, 'v2e_bg_brightness', 1.0),
         'v2e_temporal_filter_percent': getattr(args, 'v2e_temporal_filter_percent', None),
+        # Intensity-based event generation parameters
+        'intensity_pos_threshold': getattr(args, 'intensity_pos_threshold', 0.05),
+        'intensity_neg_threshold': getattr(args, 'intensity_neg_threshold', 0.05),
         # Feature computation parameters
         'tau': args.tau,
         'filter_size': args.filter_size,
@@ -212,6 +220,10 @@ def build_dataset_config(args, for_hash_only=False):
         'dtd_root': getattr(args, 'dtd_root', 'data/dtd/images'),
         'dtd_fg_seed': getattr(args, 'random_seed', None),  # Use same seed as dataset
         'dtd_bg_seed': (getattr(args, 'random_seed', None) + 1) if getattr(args, 'random_seed', None) is not None else None,
+        'animation_fps': getattr(args, 'animation_fps', 10),
+        'animation_frame_step': getattr(args, 'animation_frame_step', 10),
+        'event_animation_fps': getattr(args, 'event_animation_fps', 10),
+        'event_accumulation_ms': getattr(args, 'event_accumulation_ms', 10),
         'event_generation_method': getattr(args, 'event_generation_method', 'synthetic'),
         'save_step': 20,
         'frame_time_us': 1000,
@@ -240,6 +252,14 @@ def build_dataset_config(args, for_hash_only=False):
         'v2e_fg_brightness': 1.0,
         'v2e_bg_brightness': 1.0,
         'v2e_temporal_filter_percent': getattr(args, 'v2e_temporal_filter_percent', None),
+        # Intensity-based event generation parameters (used only if event_generation_method='intensity')
+        'intensity_pos_threshold': getattr(args, 'intensity_pos_threshold', 0.05),
+        'intensity_neg_threshold': getattr(args, 'intensity_neg_threshold', 0.05),
+        # Animation parameters
+        'animation_fps': getattr(args, 'animation_fps', 10),
+        'animation_frame_step': getattr(args, 'animation_frame_step', 10),
+        'event_animation_fps': getattr(args, 'event_animation_fps', 10),
+        'event_accumulation_ms': getattr(args, 'event_accumulation_ms', 10),
     }
     
     return OmegaConf.create(full_config)
@@ -835,8 +855,20 @@ if __name__ == "__main__":
         "--event_generation_method",
         type=str,
         default="synthetic",
-        choices=["synthetic", "v2e"],
-        help="Event generation method: 'synthetic' (fast) or 'v2e' (realistic DVS simulation)",
+        choices=["synthetic", "v2e", "intensity"],
+        help="Event generation method: 'synthetic' (boundary-based), 'v2e' (realistic DVS simulator), or 'intensity' (frame intensity differences)",
+    )
+    parser.add_argument(
+        "--intensity_pos_threshold",
+        type=float,
+        default=0.05,
+        help="Positive intensity threshold for intensity-based events (0-1 range, e.g., 0.05 = 5%% brightness change)",
+    )
+    parser.add_argument(
+        "--intensity_neg_threshold",
+        type=float,
+        default=0.05,
+        help="Negative intensity threshold for intensity-based events (0-1 range, e.g., 0.05 = 5%% brightness change)",
     )
     parser.add_argument(
         "--force_regenerate",
