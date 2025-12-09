@@ -44,6 +44,7 @@ class LissajousMovement(ShapeMovementBase):
         background_texture=None,
         foreground_texture_params=None,
         background_texture_params=None,
+        frame_time_us=1000,
         **kwargs
     ):
         self.shape_type = shape_type
@@ -61,7 +62,8 @@ class LissajousMovement(ShapeMovementBase):
                         foreground_texture=foreground_texture,
                         background_texture=background_texture,
                         foreground_texture_params=foreground_texture_params,
-                        background_texture_params=background_texture_params)
+                        background_texture_params=background_texture_params,
+                        frame_time_us=frame_time_us)
     
     @property
     def shape_name(self):
@@ -190,6 +192,7 @@ class MultiShapeLissajous(ShapeMovementBase):
         background_texture=None,
         foreground_texture_params=None,
         background_texture_params=None,
+        frame_time_us=1000,
         **kwargs
     ):
         self.num_shapes = num_shapes
@@ -212,6 +215,7 @@ class MultiShapeLissajous(ShapeMovementBase):
                 'shape_size': 15 + i * 5,  # Vary sizes
                 'phase_shift': i * np.pi / 4,  # Vary phases
                 'amplitude_scale': 0.3 - i * 0.05,  # Vary amplitudes
+                'frame_time_us': frame_time_us,
             })
             self.shapes.append(LissajousMovement(**config))
         
@@ -220,7 +224,8 @@ class MultiShapeLissajous(ShapeMovementBase):
                         foreground_texture=foreground_texture,
                         background_texture=background_texture,
                         foreground_texture_params=foreground_texture_params,
-                        background_texture_params=background_texture_params)
+                        background_texture_params=background_texture_params,
+                        frame_time_us=frame_time_us)
     
     @property
     def shape_name(self):

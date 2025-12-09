@@ -147,8 +147,8 @@ class DatasetGenerator:
         dtd_mode = cfg.get('dtd_texture_mode', 'both')
         
         if use_dtd:
-            if dtd_mode in ['fg', 'both']:
-                dtd_root = cfg.get('dtd_root', 'data/dtd')
+            if dtd_mode in ['fg', 'foreground', 'both']:
+                dtd_root = cfg.get('dtd_root', 'data/dtd/images')
                 # Use dtd_fg_seed if provided, otherwise fall back to random_seed
                 fg_seed = cfg.get('dtd_fg_seed', cfg.get('random_seed'))
                 dtd_fg_path = str(self._select_random_dtd_texture(dtd_root, fg_seed))
@@ -156,8 +156,8 @@ class DatasetGenerator:
                 cfg.fg_image_path = dtd_fg_path
                 print(f"🎨 Using DTD foreground texture (seed={fg_seed}): {dtd_fg_path}")
             
-            if dtd_mode in ['bg', 'both']:
-                dtd_root = cfg.get('dtd_root', 'data/dtd')
+            if dtd_mode in ['bg', 'background', 'both']:
+                dtd_root = cfg.get('dtd_root', 'data/dtd/images')
                 # Use dtd_bg_seed if provided, otherwise fall back to random_seed + 1
                 bg_seed = cfg.get('dtd_bg_seed')
                 if bg_seed is None:
@@ -240,6 +240,17 @@ class DatasetGenerator:
     def _create_shape_instance(self):
         """Create the shape instance based on configuration."""
         cfg = self.config
+        
+        # Set defaults for animation configuration if not provided
+        if not cfg.get('animation_fps'):
+            OmegaConf.update(cfg, 'animation_fps', 10, force_add=True)
+        if not cfg.get('animation_frame_step'):
+            OmegaConf.update(cfg, 'animation_frame_step', 10, force_add=True)
+        if not cfg.get('event_animation_fps'):
+            OmegaConf.update(cfg, 'event_animation_fps', 10, force_add=True)
+        if not cfg.get('event_accumulation_ms'):
+            OmegaConf.update(cfg, 'event_accumulation_ms', 10, force_add=True)
+        
         ShapeClass = self._get_shape_class(cfg.shape_class)
         
         # Build texture params
@@ -253,6 +264,7 @@ class DatasetGenerator:
             'background_texture': cfg.background_texture,
             'foreground_texture_params': fg_params,
             'background_texture_params': bg_params,
+            'frame_time_us': cfg.frame_time_us,
         }
         
         # Add shape-specific parameters
@@ -305,20 +317,41 @@ class DatasetGenerator:
         """
         cfg = self.config
         
-        # Force v2e if textures are present
+        # Force intensity-based or v2e if textures are present
         if (cfg.foreground_texture is not None or cfg.background_texture is not None):
-            if cfg.event_generation_method != 'v2e':
+            if cfg.event_generation_method not in ['v2e', 'intensity']:
                 print("\n" + "="*60)
-                print("⚠️  TEXTURE DETECTED: Automatically switching to v2e event generation")
+                print("⚠️  TEXTURE DETECTED: Automatically switching to intensity-based event generation")
                 print("="*60)
                 print("Reason: Synthetic boundary-based events only work with solid shapes.")
-                print("Textured shapes require realistic DVS simulation (v2e) for proper event generation.")
+                print("Textured shapes require intensity-based or v2e simulation for proper event generation.")
                 print("="*60 + "\n")
-                cfg.event_generation_method = 'v2e'
+                cfg.event_generation_method = 'intensity'
         
         print("Generating events...")
         
-        if cfg.event_generation_method == 'v2e':
+        if cfg.event_generation_method == 'intensity':
+            # Use intensity-based event generation
+            print(f"Using intensity-based event generation:")
+            print(f"  pos_threshold: {cfg.get('intensity_pos_threshold', 0.05)}")
+            print(f"  neg_threshold: {cfg.get('intensity_neg_threshold', 0.05)}")
+            print(f"  fg_gamma: {cfg.get('v2e_fg_gamma', 1.0)} (from v2e settings)")
+            print(f"  bg_gamma: {cfg.get('v2e_bg_gamma', 1.0)} (from v2e settings)")
+            print(f"  fg_scale: {cfg.get('v2e_fg_brightness', 1.0)} (from v2e settings)")
+            print(f"  bg_scale: {cfg.get('v2e_bg_brightness', 1.0)} (from v2e settings)")
+            
+            events = self.shape_instance.generate_events_from_intensity(
+                pos_threshold=cfg.get('intensity_pos_threshold', 0.05),
+                neg_threshold=cfg.get('intensity_neg_threshold', 0.05),
+                fg_gamma=cfg.get('v2e_fg_gamma', 1.0),
+                bg_gamma=cfg.get('v2e_bg_gamma', 1.0),
+                fg_scale=cfg.get('v2e_fg_brightness', 1.0),
+                bg_scale=cfg.get('v2e_bg_brightness', 1.0),
+            )
+            # Convert frame indices to microseconds for intensity-based events
+            events['t'] = events['t'] * cfg.frame_time_us
+            
+        elif cfg.event_generation_method == 'v2e':
             try:
                 from v2e_event_generator import V2EEventGenerator
                 

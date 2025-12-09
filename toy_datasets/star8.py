@@ -20,6 +20,7 @@ class StarMovement(ShapeMovementBase):
         background_texture=None,
         foreground_texture_params=None,
         background_texture_params=None,
+        frame_time_us=1000,
         **kwargs
     ):
         params = {
@@ -34,6 +35,7 @@ class StarMovement(ShapeMovementBase):
             "background_texture": background_texture,
             "foreground_texture_params": foreground_texture_params,
             "background_texture_params": background_texture_params,
+            "frame_time_us": frame_time_us,
         }
         if kwargs:
             params.update(kwargs)
@@ -52,7 +54,8 @@ class StarMovement(ShapeMovementBase):
             foreground_texture=foreground_texture,
             background_texture=background_texture,
             foreground_texture_params=foreground_texture_params,
-            background_texture_params=background_texture_params
+            background_texture_params=background_texture_params,
+            frame_time_us=frame_time_us
         )
         
     @property
