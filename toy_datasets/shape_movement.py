@@ -9,7 +9,8 @@ from tqdm import tqdm
 class ShapeMovementBase(ABC):
     def __init__(self, total_frames, image_size, face_color='blue', 
                  foreground_texture=None, background_texture=None,
-                 foreground_texture_params=None, background_texture_params=None):
+                 foreground_texture_params=None, background_texture_params=None,
+                 frame_time_us=1000):
         """
         Initialize shape movement with optional textures.
         
@@ -21,10 +22,12 @@ class ShapeMovementBase(ABC):
             background_texture: Type of texture for the background ('solid', 'noise', 'gradient', 'checkerboard', None)
             foreground_texture_params: Dict with texture-specific parameters
             background_texture_params: Dict with texture-specific parameters
+            frame_time_us: Microseconds per frame (default 1000, i.e., 1ms per frame)
         """
         self.total_frames = total_frames
         self.image_size = image_size  # (height, width)
         self.face_color = face_color
+        self.frame_time_us = frame_time_us
         
         # Texture settings
         self.foreground_texture = foreground_texture
@@ -112,6 +115,7 @@ class ShapeMovementBase(ABC):
         ax.set_xlim(0, self.image_size[1])
         ax.set_ylim(0, self.image_size[0])
         ax.set_aspect('equal')
+        ax.invert_yaxis()  # Match image coordinates
         ax.axis('off')
 
         # Initial drawing
@@ -300,6 +304,7 @@ class ShapeMovementBase(ABC):
         Returns:
             np.ndarray with dtype [('x', int16), ('y', int16), ('t', int64), 
                                 ('p', bool), ('v_x', float32), ('v_y', float32)]
+            Note: v_x and v_y are in units of pixels/millisecond
         """
         img_height, img_width = self.image_size
         yy, xx = np.meshgrid(np.arange(img_height), np.arange(img_width), indexing='ij')
@@ -308,6 +313,10 @@ class ShapeMovementBase(ABC):
 
         xs, ys, ts, ps, vxs, vys = [], [], [], [], [], []
         prev_indices = np.zeros(img_width * img_height, dtype=bool)
+        
+        # Velocity scale factor: convert from pixels/frame to pixels/millisecond
+        frame_time_ms = self.frame_time_us / 1000.0
+        velocity_scale = 1.0 / frame_time_ms
 
         for frame in tqdm(range(self.total_frames), desc="Generating Events"):
             self.update_shape(frame)
@@ -322,16 +331,136 @@ class ShapeMovementBase(ABC):
                 if len(indices) == 0:
                     continue
                 coords = all_coords[indices]
-                flows = self.compute_optical_flow(coords, frame)
+                flows_per_frame = self.compute_optical_flow(coords, frame)
+                
+                # Convert from pixels/frame to pixels/millisecond
+                flows_per_ms = flows_per_frame * velocity_scale
 
                 xs.append(coords[:, 0])
                 ys.append(coords[:, 1])
                 ts.append(np.full(len(indices), frame, dtype=np.int64))
                 ps.append(np.full(len(indices), polarity, dtype=bool))
-                vxs.append(flows[:, 0])
-                vys.append(flows[:, 1])
+                vxs.append(flows_per_ms[:, 0])
+                vys.append(flows_per_ms[:, 1])
 
             prev_indices = new_indices.copy()
+            
+        if xs:
+            xs = np.concatenate(xs).astype(np.int16)
+            ys = np.concatenate(ys).astype(np.int16)
+            ts = np.concatenate(ts)
+            ps = np.concatenate(ps)
+            vxs = np.concatenate(vxs).astype(np.float32)
+            vys = np.concatenate(vys).astype(np.float32)
+
+            events = np.zeros(len(xs), dtype=[
+                ('x', np.int16),
+                ('y', np.int16),
+                ('t', np.int64),
+                ('p', bool),
+                ('v_x', np.float32),
+                ('v_y', np.float32),
+            ])
+            events['x'] = xs
+            events['y'] = ys
+            events['t'] = ts
+            events['p'] = ps
+            events['v_x'] = vxs
+            events['v_y'] = vys
+            return events
+        else:
+            return np.zeros(0, dtype=[
+                ('x', np.int16),
+                ('y', np.int16),
+                ('t', np.int64),
+                ('p', bool),
+                ('v_x', np.float32),
+                ('v_y', np.float32),
+            ])
+
+    def generate_events_from_intensity(
+        self,
+        pos_threshold: float = 0.05,
+        neg_threshold: float = 0.05,
+        fg_gamma: float = 1.0,
+        bg_gamma: float = 1.0,
+        fg_scale: float = 1.0,
+        bg_scale: float = 1.0,
+    ):
+        """
+        Generate events based on intensity changes from rendered frames.
+        
+        This method renders frames using render_frame() and generates events when
+        the intensity change at a pixel exceeds the positive or negative threshold.
+        Similar to DVS behavior but based on rendered intensity rather than shape geometry.
+        
+        Args:
+            pos_threshold: Positive threshold for intensity increase (0-1 range, 0=black to 1=white, e.g., 0.05 = 5% brightness change)
+            neg_threshold: Negative threshold for intensity decrease (0-1 range, 0=black to 1=white, e.g., 0.05 = 5% brightness change)
+            fg_gamma: Gamma correction for foreground rendering
+            bg_gamma: Gamma correction for background rendering
+            fg_scale: Multiplier for foreground brightness
+            bg_scale: Multiplier for background brightness
+            
+        Returns:
+            np.ndarray with dtype [('x', int16), ('y', int16), ('t', int64), 
+                                ('p', bool), ('v_x', float32), ('v_y', float32)]
+            Note: v_x and v_y are in units of pixels/millisecond
+        """
+        xs, ys, ts, ps, vxs, vys = [], [], [], [], [], []
+        
+        # Velocity scale factor: convert from pixels/frame to pixels/millisecond
+        frame_time_ms = self.frame_time_us / 1000.0
+        velocity_scale = 1.0 / frame_time_ms
+        
+        # Render first frame
+        prev_frame = self.render_frame(0, fg_gamma, bg_gamma, fg_scale, bg_scale).astype(np.float32) / 255.0
+
+        for frame in tqdm(range(1, self.total_frames), desc="Generating Events from Intensity"):
+            # Render current frame
+            curr_frame = self.render_frame(frame, fg_gamma, bg_gamma, fg_scale, bg_scale).astype(np.float32) / 255.0
+            
+            # Compute intensity difference
+            intensity_diff = curr_frame - prev_frame
+            
+            # Detect positive (intensity increase) and negative (intensity decrease) events
+            pos_mask = intensity_diff > pos_threshold
+            neg_mask = intensity_diff < -neg_threshold
+            
+            # Process positive events
+            pos_y, pos_x = np.where(pos_mask)
+            if len(pos_x) > 0:
+                coords = np.column_stack([pos_x, pos_y])
+                flows_per_frame = self.compute_optical_flow(coords, frame)
+                
+                # Convert from pixels/frame to pixels/millisecond
+                flows_per_ms = flows_per_frame * velocity_scale
+                
+                xs.append(pos_x)
+                ys.append(pos_y)
+                ts.append(np.full(len(pos_x), frame, dtype=np.int64))
+                ps.append(np.full(len(pos_x), True, dtype=bool))
+                vxs.append(flows_per_ms[:, 0])
+                vys.append(flows_per_ms[:, 1])
+            
+            # Process negative events
+            neg_y, neg_x = np.where(neg_mask)
+            if len(neg_x) > 0:
+                coords = np.column_stack([neg_x, neg_y])
+                flows_per_frame = self.compute_optical_flow(coords, frame)
+                
+                # Convert from pixels/frame to pixels/millisecond
+                flows_per_ms = flows_per_frame * velocity_scale
+                
+                xs.append(neg_x)
+                ys.append(neg_y)
+                ts.append(np.full(len(neg_x), frame, dtype=np.int64))
+                ps.append(np.full(len(neg_x), False, dtype=bool))
+                vxs.append(flows_per_ms[:, 0])
+                vys.append(flows_per_ms[:, 1])
+            
+            # Update previous frame
+            prev_frame = curr_frame
             
         if xs:
             xs = np.concatenate(xs).astype(np.int16)
@@ -704,7 +833,8 @@ class ShapeMovementBase(ABC):
             ax.invert_yaxis()  # Match image coordinates
             
             # Draw the shape
-            patch = PathPatch(self.transformed_path, facecolor=self.face_color, edgecolor='none')
+            self.update_shape(frame)
+            patch = PathPatch(self.transformed_path, facecolor=self.face_color, edgecolor='none', antialiased=False)
             ax.add_patch(patch)
             ax.set_facecolor('white')
             
@@ -740,8 +870,8 @@ class ShapeMovementBase(ABC):
         skip_optical_flow: bool = False,
         fg_gamma: float = 2.0,
         bg_gamma: float = 0.6,
-        fg_brightness_scale: float = 1.0,
-        bg_brightness_scale: float = 1.0,
+        fg_scale: float = 1.0,
+        bg_scale: float = 1.0,
         temporal_filter_percent: float = None,
     ) -> np.ndarray:
         """
@@ -761,10 +891,10 @@ class ShapeMovementBase(ABC):
             leak_jitter_fraction: Leak event timing jitter (fraction of interval)
             noise_rate_cov_decades: Spatial variation in noise rates (decades)
             skip_optical_flow: If True, skip optical flow computation (faster)
-            fg_gamma: Gamma correction for foreground (>1 darkens, <1 brightens, default=1.5)
-            bg_gamma: Gamma correction for background (>1 darkens, <1 brightens, default=0.8)
-            fg_brightness_scale: Foreground brightness multiplier (0-1, lower=darker)
-            bg_brightness_scale: Background brightness multiplier (0-1, lower=darker)
+            fg_gamma: Gamma correction for foreground (>1 darkens, <1 brightens, default=2.0)
+            bg_gamma: Gamma correction for background (>1 darkens, <1 brightens, default=0.6)
+            fg_scale: Foreground brightness multiplier (0-1, lower=darker)
+            bg_scale: Background brightness multiplier (0-1, lower=darker)
             temporal_filter_percent: If set, keep only events within [frame_time, frame_time + window] where
                                     window = (temporal_filter_percent/100 * frame_time_us). For example, 4.0 with 
                                     frame_time_us=1000 means keep events in [1000, 1040], [2000, 2040], etc.
@@ -787,7 +917,7 @@ class ShapeMovementBase(ABC):
         print("Rendering frames for v2e...")
         frames = []
         for frame in tqdm(range(self.total_frames), desc="Rendering frames"):
-            gray_frame = self.render_frame(frame, fg_gamma, bg_gamma, fg_brightness_scale, bg_brightness_scale)
+            gray_frame = self.render_frame(frame, fg_gamma, bg_gamma, fg_scale, bg_scale)
             frames.append(gray_frame)
         
         frames = np.array(frames)  # Shape: (T, H, W)
@@ -857,14 +987,13 @@ class ShapeMovementBase(ABC):
         
         return events_with_flow
 
-    def add_optical_flow_to_events(self, events: np.ndarray, frame_time_us: int = 1000) -> np.ndarray:
+    def add_optical_flow_to_events(self, events: np.ndarray) -> np.ndarray:
         """
         Add optical flow information to events.
         
         Args:
             events: Structured array with ('x', 'y', 't', 'p')
-            frame_time_us: Microseconds per frame (used to determine frame number from timestamp)
-            
+          
         Returns:
             Structured array with ('x', 'y', 't', 'p', 'v_x', 'v_y')
             Note: v_x and v_y are in units of pixels/millisecond for consistency with common velocity units
@@ -902,13 +1031,13 @@ class ShapeMovementBase(ABC):
         # Velocity scale factor: convert from pixels/frame to pixels/millisecond
         # frame_time_us is in microseconds, so divide by 1000 to get milliseconds
         # velocity_ms = pixels/frame * (1 frame / frame_time_ms)
-        frame_time_ms = frame_time_us / 1000.0
+        frame_time_ms = self.frame_time_us / 1000.0
         velocity_scale = 1.0 / frame_time_ms
         
         for i in tqdm(range(len(events)), desc="Adding optical flow", leave=False):
             event = events[i]
             # Use the known frame timing from v2e simulation
-            frame = int(event['t'] / frame_time_us)
+            frame = int(event['t'] / self.frame_time_us)
             frame = min(frame, self.total_frames - 1)
             
             # Compute flow at this pixel (returns pixels/frame)
