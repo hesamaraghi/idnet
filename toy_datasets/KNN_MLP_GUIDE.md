@@ -4,11 +4,16 @@
 
 `knn_mlp.py` implements a k-Nearest Neighbors + Multi-Layer Perceptron pipeline for predicting optical flow from event camera data. The approach:
 
-1. Generates synthetic event datasets with ground truth optical flow
+1. Generates synthetic event datasets with ground truth optical flow (using synthetic, intensity-based, or v2e methods)
 2. Extracts spatial-temporal features from events
 3. Builds k-NN graph for each event
 4. Trains MLP to predict optical flow from k-NN feature vectors
 5. Evaluates predictions and saves results
+
+**Event Generation Options**:
+- **Synthetic**: Fast boundary-based events (prototyping)
+- **Intensity**: Frame difference with thresholding (balanced)
+- **V2E**: Full DVS simulation (realistic)
 
 ---
 
@@ -21,6 +26,9 @@ python toy_datasets/knn_mlp.py
 
 # Train with specific k value and feature type
 python toy_datasets/knn_mlp.py --k 50 --feature_type both
+
+# Use intensity-based events (more realistic)
+python toy_datasets/knn_mlp.py --event_generation_method intensity
 
 # Use relative coordinates (translation-invariant)
 python toy_datasets/knn_mlp.py --relative_coordinates
@@ -57,7 +65,17 @@ Event Generation → Feature Extraction → k-NN Graph → MLP Training → Eval
 | Method | Description | Speed | Realism | Use Case |
 |--------|-------------|-------|---------|----------|
 | `synthetic` | Simple on/off events at shape boundaries | Fast | Low | Quick prototyping, debugging |
+| `intensity` | Frame-to-frame intensity differences with thresholding | Medium | Medium | Balance of speed and realism |
 | `v2e` | Full DVS simulator with noise, threshold mismatch | Slow | High | Realistic evaluation |
+
+**Intensity-Based Event Generation**:
+The `intensity` method generates events by comparing consecutive frames:
+- Computes per-pixel intensity differences: `ΔI = I(t) - I(t-1)`
+- Generates positive event when `ΔI > intensity_pos_threshold`
+- Generates negative event when `ΔI < -intensity_neg_threshold`
+- Thresholds are in normalized range [0, 1] (e.g., 0.05 = 5% brightness change)
+- More realistic than synthetic, faster than v2e
+- Good for testing before full v2e evaluation
 
 **Key Parameters**:
 ```bash
@@ -67,7 +85,7 @@ Event Generation → Feature Extraction → k-NN Graph → MLP Training → Eval
 --outer_radius 40          # Star outer radius
 --inner_radius 20          # Star inner radius
 --num_rotations 2          # Full rotations in sequence
---event_generation_method synthetic  # or 'v2e'
+--event_generation_method synthetic  # synthetic, intensity, or v2e
 ```
 
 **Dataset Caching**:
@@ -214,62 +232,135 @@ Sequential(
 
 ```bash
 # Shape configuration
---toy_dataset star8                 # Dataset type (currently only star8)
---total_frames 2000                 # Sequence length
---img_size 256 256                  # Image dimensions (H W)
---num_points 5                      # Star points
---outer_radius 40                   # Outer radius (pixels)
---inner_radius 20                   # Inner radius (pixels)
---num_rotations 2                   # Complete rotations
+--toy_dataset star8                 # Dataset type (default: star8)
+--total_frames 2000                 # Sequence length (default: 2000)
+--img_size 256 256                  # Image dimensions H W (default: [256, 256])
+--num_points 5                      # Star points (default: 5)
+--outer_radius 40                   # Outer radius in pixels (default: 40)
+--inner_radius 20                   # Inner radius in pixels (default: 20)
+--num_rotations 2                   # Complete rotations (default: 2)
 
 # Event generation
---event_generation_method synthetic # synthetic or v2e
---force_regenerate                  # Ignore cache, regenerate dataset
+--event_generation_method synthetic # synthetic, intensity, or v2e (default: synthetic)
+--intensity_pos_threshold 0.05      # Positive threshold for intensity method (default: 0.05)
+--intensity_neg_threshold 0.05      # Negative threshold for intensity method (default: 0.05)
+--force_regenerate                  # Ignore cache, regenerate dataset (default: False)
 ```
 
 ### Feature Parameters
 
 ```bash
 # Feature extraction
---feature_type both                 # Feature type (see table above)
---tau 1.0                           # Temporal decay constant
---filter_size 5                     # Spatial filter size
+--feature_type both                 # Feature type (default: both, see table above)
+--tau 1.0                           # Temporal decay constant (default: 1.0)
+--filter_size 5                     # Spatial filter size (default: 5)
 
 # k-NN configuration
---k 50                              # Number of neighbors
---relative_coordinates              # Use relative instead of absolute coords
+--k 50                              # Number of neighbors (default: 5)
+--relative_coordinates              # Use relative instead of absolute coords (default: False)
 ```
 
 ### Training Parameters
 
 ```bash
 # Model architecture
---hidden_dim 64                     # MLP hidden layer size
+--hidden_dim 64                     # MLP hidden layer size (default: 64)
 
 # Optimization
---lr 1e-3                           # Learning rate
---batch_size 16                     # Batch size
---max_epochs 100                    # Training epochs
+--lr 1e-3                           # Learning rate (default: 0.001)
+--batch_size 16                     # Batch size (default: 16)
+--max_epochs 100                    # Training epochs (default: 100)
 
 # Data splitting
---test_train_split temporal         # random or temporal
---test_size 0.2                     # Validation fraction
---test_split_seed 42                # Split reproducibility
---random_seed 42                    # Master random seed
+--test_train_split temporal         # random or temporal (default: temporal)
+--test_size 0.2                     # Validation fraction (default: 0.2)
+--test_split_seed 42                # Split reproducibility (default: None, uses random_seed)
+--random_seed 42                    # Master random seed (default: 42)
 ```
 
 ### Logging Parameters
 
 ```bash
 # W&B configuration
---entity "your-username"            # W&B user or team
---project "knn-mlp-regression"      # Project name
---log_dir "wandb_logs"              # Local directory
---online                            # Enable online sync
+--entity "your-username"            # W&B user or team (default: None)
+--project "knn-mlp-regression"      # Project name (default: knn-mlp-regression-relative)
+--log_dir "wandb_logs"              # Local directory (default: wandb_logs)
+--online                            # Enable online sync (default: False, offline mode)
 
 # Evaluation
---eval_run_id "abc123xyz"           # Evaluate existing run
+--eval_run_id "abc123xyz"           # Evaluate existing run (default: None, runs training)
 ```
+
+### V2E Parameters (when using --event_generation_method v2e)
+
+```bash
+# DVS sensor simulation
+--v2e_pos_thres 0.2                 # Positive contrast threshold (default: 0.2)
+--v2e_neg_thres 0.2                 # Negative contrast threshold (default: 0.2)
+--v2e_sigma_thres 0.0               # Threshold mismatch sigma (default: 0.0)
+--v2e_cutoff_hz 0                   # Photoreceptor cutoff frequency Hz (default: 0)
+--v2e_leak_rate_hz 0.0              # Leak event rate Hz (default: 0.0)
+--v2e_shot_noise_rate_hz 0.0        # Shot noise rate Hz (default: 0.0)
+--v2e_refractory_period_s 0.0       # Refractory period seconds (default: 0.0)
+--v2e_seed 42                       # V2E random seed (default: None, uses random_seed)
+--v2e_photoreceptor_noise           # Use photoreceptor noise model (default: False)
+--v2e_leak_jitter_fraction 0.0      # Leak event timing jitter (default: 0.0)
+--v2e_noise_rate_cov_decades 0.0    # Spatial variation in noise rates (default: 0.0)
+--v2e_fg_gamma 2.0                  # Foreground gamma correction (default: 2.0)
+--v2e_bg_gamma 0.6                  # Background gamma correction (default: 0.6)
+--v2e_fg_brightness 1.0             # Foreground brightness multiplier (default: 1.0)
+--v2e_bg_brightness 1.0             # Background brightness multiplier (default: 1.0)
+--v2e_temporal_filter_percent None  # Keep events within X% of frame_time (default: None)
+```
+
+### Texture Parameters (DTD textures)
+
+```bash
+--use_random_dtd_texture            # Use random DTD textures (default: False)
+--dtd_texture_mode both             # foreground, background, or both (default: both)
+--foreground_texture None           # Specific foreground texture (default: None)
+--background_texture None           # Specific background texture (default: None)
+--fg_image_path None                # Custom foreground image path (default: None)
+--bg_image_path None                # Custom background image path (default: None)
+--dtd_root "data/dtd/images"        # DTD dataset root directory (default: data/dtd/images)
+```
+
+---
+
+## Default Values Quick Reference
+
+**To see all current defaults:** `python toy_datasets/knn_mlp.py --help`
+
+| Parameter | Default | Category |
+|-----------|---------|----------|
+| `--k` | 5 | Feature |
+| `--feature_type` | both | Feature |
+| `--tau` | 1.0 | Feature |
+| `--filter_size` | 5 | Feature |
+| `--relative_coordinates` | False | Feature |
+| `--event_generation_method` | synthetic | Dataset |
+| `--intensity_pos_threshold` | 0.05 | Dataset |
+| `--intensity_neg_threshold` | 0.05 | Dataset |
+| `--total_frames` | 2000 | Dataset |
+| `--img_size` | [256, 256] | Dataset |
+| `--num_points` | 5 | Dataset |
+| `--outer_radius` | 40 | Dataset |
+| `--inner_radius` | 20 | Dataset |
+| `--num_rotations` | 2 | Dataset |
+| `--test_train_split` | temporal | Training |
+| `--test_size` | 0.2 | Training |
+| `--random_seed` | 42 | Training |
+| `--hidden_dim` | 64 | Model |
+| `--lr` | 0.001 | Training |
+| `--batch_size` | 16 | Training |
+| `--max_epochs` | 100 | Training |
+| `--project` | knn-mlp-regression-relative | Logging |
+| `--log_dir` | wandb_logs | Logging |
+| `--online` | False | Logging |
+| `--v2e_pos_thres` | 0.2 | V2E |
+| `--v2e_neg_thres` | 0.2 | V2E |
+| `--v2e_fg_gamma` | 2.0 | V2E |
+| `--v2e_bg_gamma` | 0.6 | V2E |
 
 ---
 
@@ -296,12 +387,29 @@ done
 for feat in original eig filter both; do
     python toy_datasets/knn_mlp.py --feature_type $feat --project "feature-sweep"
 done
+
+# Try different event generation methods
+for method in synthetic intensity v2e; do
+    python toy_datasets/knn_mlp.py --event_generation_method $method --project "event-method-sweep"
+done
 ```
 
 ### 3. Realistic Evaluation
 
 ```bash
-# Use v2e events with temporal split
+# Use intensity-based events with temporal split (balanced speed/realism)
+python toy_datasets/knn_mlp.py \
+    --event_generation_method intensity \
+    --intensity_pos_threshold 0.05 \
+    --intensity_neg_threshold 0.05 \
+    --test_train_split temporal \
+    --relative_coordinates \
+    --k 50 \
+    --feature_type both_time_augmented \
+    --max_epochs 200 \
+    --online
+
+# Or use v2e for highest realism (slower)
 python toy_datasets/knn_mlp.py \
     --event_generation_method v2e \
     --test_train_split temporal \
@@ -418,6 +526,40 @@ python toy_datasets/knn_mlp.py --feature_type filter
 python toy_datasets/knn_mlp.py --feature_type both
 ```
 
+### Event Generation Method Comparison
+
+**Progressive Evaluation Strategy**:
+```bash
+# Step 1: Fast prototyping with synthetic events
+python toy_datasets/knn_mlp.py \
+    --event_generation_method synthetic \
+    --max_epochs 50
+
+# Step 2: Test with intensity-based events
+python toy_datasets/knn_mlp.py \
+    --event_generation_method intensity \
+    --intensity_pos_threshold 0.05 \
+    --intensity_neg_threshold 0.05 \
+    --max_epochs 100
+
+# Step 3: Final evaluation with v2e (most realistic)
+python toy_datasets/knn_mlp.py \
+    --event_generation_method v2e \
+    --max_epochs 200
+```
+
+**Threshold Tuning for Intensity Method**:
+```bash
+# Try different intensity thresholds
+for thresh in 0.01 0.03 0.05 0.1; do
+    python toy_datasets/knn_mlp.py \
+        --event_generation_method intensity \
+        --intensity_pos_threshold $thresh \
+        --intensity_neg_threshold $thresh \
+        --project "intensity-threshold-sweep"
+done
+```
+
 ### Temporal vs Random Split
 
 **Temporal Split** (Recommended):
@@ -457,8 +599,9 @@ python toy_datasets/knn_mlp.py --feature_type both
 # Reduce dataset size
 --total_frames 1000
 
-# Use synthetic events instead of v2e
---event_generation_method synthetic
+# Use faster event generation methods
+--event_generation_method synthetic  # fastest
+--event_generation_method intensity  # balanced speed/realism
 ```
 
 **3. Cache Issues**
@@ -574,9 +717,10 @@ data_array = generator._generate_events()
 
 | Configuration | Events | k | Epochs | Time |
 |--------------|--------|---|--------|------|
-| Small | ~10k | 10 | 50 | ~2 min |
-| Medium | ~50k | 50 | 100 | ~10 min |
-| Large | ~200k | 50 | 100 | ~30 min |
+| Small (synthetic) | ~10k | 10 | 50 | ~2 min |
+| Medium (synthetic) | ~50k | 50 | 100 | ~10 min |
+| Large (synthetic) | ~200k | 50 | 100 | ~30 min |
+| Large (intensity) | ~200k | 50 | 100 | ~40 min |
 | v2e Large | ~500k | 50 | 200 | ~2 hours |
 
 **Memory Usage**:
@@ -609,8 +753,13 @@ data_array = generator._generate_events()
 
 ## FAQ
 
-**Q: What's the difference between synthetic and v2e events?**
-A: Synthetic events are fast, deterministic on/off signals at shape boundaries. V2e simulates realistic DVS camera behavior with noise, threshold mismatch, and temporal dynamics. Use synthetic for prototyping, v2e for realistic evaluation.
+**Q: What's the difference between synthetic, intensity, and v2e events?**
+A: 
+- **Synthetic**: Fast, deterministic on/off signals at shape boundaries. Best for quick prototyping.
+- **Intensity**: Frame-to-frame brightness differences with thresholding. Balances speed and realism.
+- **V2E**: Full DVS simulator with noise, threshold mismatch, and temporal dynamics. Most realistic but slowest.
+
+Use synthetic for prototyping, intensity for balanced evaluation, v2e for highest realism.
 
 **Q: Should I use relative or absolute coordinates?**
 A: Generally use relative coordinates (`--relative_coordinates`). They provide translation invariance and usually improve performance.
@@ -634,7 +783,7 @@ A: Yes! Add new shape classes in `shape_movement.py`, then update the dataset ge
 
 ## Version History
 
-- **2024-12**: Enhanced feature extraction, relative coordinates, comprehensive caching
+- **2024-12**: Enhanced feature extraction, relative coordinates, comprehensive caching, intensity-based event generation method
 - **2024-11**: V2e integration, temporal filtering, texture support
 - **2024-10**: Initial implementation with star8 dataset
 
