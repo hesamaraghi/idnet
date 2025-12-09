@@ -16,14 +16,13 @@ def main():
     # Define search space (edit these lists)
     # -----------------------------------------
     search_space = {
-        "feature_type": ["both"],#"both_time_augmented"],#"original_time_augmented", "original_time_augmented_repeated_augmented", "original", "filter", "eig","both"],
-        "tau": [0.003, 0.03, 0.3, 3.0, 30.0, 300.0],# 1.0, 5.0,
+        "feature_type": ["both", "original"],#"both_time_augmented"],#"original_time_augmented", "original_time_augmented_repeated_augmented", "original", "filter", "eig","both"],
+        "tau": [30.0],# 1.0, 5.0,
         "filter_size": [7],
         "toy_dataset": ["star8"],
         "test_train_split": ["temporal"], #"random", "temporal"
-        "test_split_seed": [42, 420, 4200, 42000, 420000, 0, 10, 100, 1000, 10000],
+        "random_seed": [42, 420, 4200, 42000, 420000, 0, 10, 100, 1000, 10000],
         "k": [50],
-        "relative_coordinates": [True],
         # Data params
         "event_generation_method": ["v2e"],  # "synthetic" or "v2e"
         # "img_size": [[256, 256]],
@@ -34,30 +33,30 @@ def main():
         # "num_rotations": [2],
         
         # Texture params (optional - uncomment to use)
-        # "use_random_dtd_texture": [True],
-        # "dtd_texture_mode": ["both"],  # "foreground", "background", or "both"
+        "use_random_dtd_texture": [True],
+        "dtd_texture_mode": ["foreground"],  # "foreground", "background", or "both"
+        
+        "create_animation": [True],
         
         # V2E params
         "v2e_pos_thres": [0.2],
         "v2e_neg_thres": [0.2],
         "v2e_fg_gamma": [2.0],
         "v2e_bg_gamma": [0.6],
-        "v2e_temporal_filter_percent": [2.0, 4.0, 10.0],  # Keep first X% of each frame
+        "v2e_temporal_filter_percent": [2.0, 4.0],  # Keep first X% of each frame
         
         # Dataset params
         "test_train_split": ["temporal"],
         "test_size": [0.2],
-        "test_split_seed": [42, 420, 4200],
-        "random_seed": [42],
         
         # Model params
         "hidden_dim": [128],
         "lr": [1e-4],
         "max_epochs": [500],
-        "batch_size": [16], 
+        "batch_size": [1024], 
         "relative_coordinates": [True],
-        "project": ["knn-mlp-regression-relative-multiseed-TAU"],
-        "online" : [False],
+        "project": ["knn-mlp-regression-relative-multiseed-texture-v2e"],
+        "online" : [True],
     }
     # search_space = {
     #     "entity": ["haraghi"],
