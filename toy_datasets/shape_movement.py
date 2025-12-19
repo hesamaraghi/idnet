@@ -983,7 +983,7 @@ class ShapeMovementBase(ABC):
             events_with_flow['v_y'] = 0.0
         else:
             print("Computing optical flow for events...")
-            events_with_flow = self.add_optical_flow_to_events(v2e_events, frame_time_us)
+            events_with_flow = self.add_optical_flow_to_events(v2e_events)
         
         return events_with_flow
 
