@@ -386,6 +386,7 @@ class ShapeMovementBase(ABC):
         bg_gamma: float = 1.0,
         fg_scale: float = 1.0,
         bg_scale: float = 1.0,
+        shot_noise_rate_hz: float = 0.0,
     ):
         """
         Generate events based on intensity changes from rendered frames.
@@ -401,17 +402,30 @@ class ShapeMovementBase(ABC):
             bg_gamma: Gamma correction for background rendering
             fg_scale: Multiplier for foreground brightness
             bg_scale: Multiplier for background brightness
+            shot_noise_rate_hz: Shot noise rate in Hz per pixel. If > 0, adds shot noise events. Default 0 (no noise)
             
         Returns:
             np.ndarray with dtype [('x', int16), ('y', int16), ('t', int64), 
                                 ('p', bool), ('v_x', float32), ('v_y', float32)]
             Note: v_x and v_y are in units of pixels/millisecond
         """
+        import torch
+        
         xs, ys, ts, ps, vxs, vys = [], [], [], [], [], []
         
         # Velocity scale factor: convert from pixels/frame to pixels/millisecond
         frame_time_ms = self.frame_time_us / 1000.0
         velocity_scale = 1.0 / frame_time_ms
+        
+        # Import shot noise function if needed
+        if shot_noise_rate_hz > 0:
+            try:
+                from external.v2e.v2ecore.emulator_utils import generate_shot_noise
+                print(f"📊 Shot noise enabled: {shot_noise_rate_hz} Hz per pixel")
+            except ImportError:
+                print("⚠️  WARNING: Could not import generate_shot_noise from external.v2e.v2ecore.emulator_utils")
+                print("   Shot noise will be disabled. Make sure v2e is properly installed.")
+                shot_noise_rate_hz = 0.0
         
         # Render first frame
         prev_frame = self.render_frame(0, fg_gamma, bg_gamma, fg_scale, bg_scale).astype(np.float32) / 255.0
@@ -458,6 +472,50 @@ class ShapeMovementBase(ABC):
                 ps.append(np.full(len(neg_x), False, dtype=bool))
                 vxs.append(flows_per_ms[:, 0])
                 vys.append(flows_per_ms[:, 1])
+            
+            # Add shot noise events if enabled
+            if shot_noise_rate_hz > 0:
+                # Convert current frame to torch tensor (normalized to 0-1)
+                curr_frame_torch = torch.from_numpy(curr_frame).float()
+                
+                self.SHOT_NOISE_INTEN_FACTOR = 0.25
+                
+                inten01 = (curr_frame_torch * 255.0 + 20.0) / 275.0 # adopted from rescale_intensity_frame in v2e emulator_utils
+                
+                # Generate shot noise using the emulator utility
+                delta_time = frame_time_ms / 1000.0  # convert ms to seconds
+                shot_on_cord, shot_off_cord = generate_shot_noise(
+                    shot_noise_rate_hz=shot_noise_rate_hz,
+                    delta_time=delta_time,
+                    shot_noise_inten_factor=self.SHOT_NOISE_INTEN_FACTOR,  # factor to model intensity-dependent noise
+                    inten01=inten01,  # intensity in 0-1 range
+                    pos_thres_pre_prob=1.0,  # normalized threshold factor
+                    neg_thres_pre_prob=1.0,  # normalized threshold factor
+                )
+                
+                # Process shot noise ON events
+                shot_on_y, shot_on_x = np.where(shot_on_cord.cpu().numpy())
+                if len(shot_on_x) > 0:  
+                    # Add None as the velocity for shot noise events
+                                      
+                    xs.append(shot_on_x)
+                    ys.append(shot_on_y)
+                    ts.append(np.full(len(shot_on_x), frame, dtype=np.int64))
+                    ps.append(np.full(len(shot_on_x), True, dtype=bool))
+                    vxs.append(np.full(len(shot_on_x), np.nan, dtype=np.float32))
+                    vys.append(np.full(len(shot_on_x), np.nan, dtype=np.float32))
+                
+                # Process shot noise OFF events
+                shot_off_y, shot_off_x = np.where(shot_off_cord.cpu().numpy())
+                if len(shot_off_x) > 0:
+                    # Add None as the velocity for shot noise events
+                    
+                    xs.append(shot_off_x)
+                    ys.append(shot_off_y)
+                    ts.append(np.full(len(shot_off_x), frame, dtype=np.int64))
+                    ps.append(np.full(len(shot_off_x), False, dtype=bool))
+                    vxs.append(np.full(len(shot_off_x), np.nan, dtype=np.float32))
+                    vys.append(np.full(len(shot_off_x), np.nan, dtype=np.float32))
             
             # Update previous frame
             prev_frame = curr_frame

@@ -189,6 +189,7 @@ def build_dataset_config(args, for_hash_only=False):
         # Intensity-based event generation parameters
         'intensity_pos_threshold': getattr(args, 'intensity_pos_threshold', 0.05),
         'intensity_neg_threshold': getattr(args, 'intensity_neg_threshold', 0.05),
+        'intensity_shot_noise_rate_hz': getattr(args, 'intensity_shot_noise_rate_hz', 0.0),
         # Feature computation parameters
         'tau': args.tau,
         'filter_size': args.filter_size,
@@ -504,6 +505,37 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         print("Using absolute coordinates for kNN features")
         X_with_neighbors = build_knn_features(features, knn_idx)
     Y = data.v
+    
+    # -------------------------------
+    # Filter out None values in labels
+    # -------------------------------
+    total_samples = Y.size(0)
+    # Check for NaN or inf values in labels (vectorized)
+    valid_mask = ~(torch.isnan(Y).any(dim=1) | torch.isinf(Y).any(dim=1))
+    
+    num_invalid = (~valid_mask).sum().item()
+    
+    if num_invalid > 0:
+        print("\n" + "="*70)
+        print("⚠️  WARNING: Found invalid (None/NaN/Inf) values in labels!")
+        print("="*70)
+        print(f"   Total samples: {total_samples:,}")
+        print(f"   Invalid samples: {num_invalid:,}")
+        print(f"   Invalid percentage: {(num_invalid/total_samples)*100:.2f}%")
+        print(f"   Valid samples remaining: {valid_mask.sum().item():,}")
+        print(f"   Valid percentage: {(valid_mask.sum().item()/total_samples)*100:.2f}%")
+        print("="*70 + "\n")
+        
+        # Filter out invalid samples
+        X_with_neighbors = X_with_neighbors[valid_mask]
+        Y = Y[valid_mask]
+        features = features[valid_mask]
+        knn_idx = knn_idx[valid_mask]
+        
+        print(f"✅ Filtered data shapes after removing invalid labels:")
+        print(f"   X_with_neighbors: {X_with_neighbors.shape}")
+        print(f"   Y (labels): {Y.shape}")
+    
     print("X_with_neighbors shape:", X_with_neighbors.shape, flush=True)
     if args.test_train_split == "random":
         indices = np.arange(X_with_neighbors.shape[0])       
@@ -1014,6 +1046,13 @@ if __name__ == "__main__":
         type=float,
         default=0.05,
         help="Negative intensity threshold for intensity-based events (0-1 range, e.g., 0.05 = 5%% brightness change)",
+    )
+    parser.add_argument(
+        "--intensity_shot_noise_rate_hz",
+        type=float,
+        default=0.0,
+        help="Shot noise rate in Hz per pixel for intensity-based events (default: 0.0 = no noise). "
+             "Only used when --event_generation_method=intensity. Adds random ON/OFF events to simulate sensor noise.",
     )
     parser.add_argument(
         "--force_regenerate",

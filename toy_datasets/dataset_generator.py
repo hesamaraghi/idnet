@@ -339,6 +339,7 @@ class DatasetGenerator:
             print(f"  bg_gamma: {cfg.get('v2e_bg_gamma', 1.0)} (from v2e settings)")
             print(f"  fg_scale: {cfg.get('v2e_fg_brightness', 1.0)} (from v2e settings)")
             print(f"  bg_scale: {cfg.get('v2e_bg_brightness', 1.0)} (from v2e settings)")
+            print(f"  shot_noise_rate_hz: {cfg.get('intensity_shot_noise_rate_hz', 0.0)} Hz")
             
             events = self.shape_instance.generate_events_from_intensity(
                 pos_threshold=cfg.get('intensity_pos_threshold', 0.05),
@@ -347,6 +348,7 @@ class DatasetGenerator:
                 bg_gamma=cfg.get('v2e_bg_gamma', 1.0),
                 fg_scale=cfg.get('v2e_fg_brightness', 1.0),
                 bg_scale=cfg.get('v2e_bg_brightness', 1.0),
+                shot_noise_rate_hz=cfg.get('intensity_shot_noise_rate_hz', 0.0),
             )
             # Convert frame indices to microseconds for intensity-based events
             events['t'] = events['t'] * cfg.frame_time_us
