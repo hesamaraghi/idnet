@@ -8,6 +8,7 @@ from omegaconf import OmegaConf
 from dataset_generator import DatasetGenerator
 from utils.visualize_utils import animate_events
 from utils.data_utils import *
+from utils.retrieve_hpc_data import ensure_local_file
 from idn.loader.loader_dsec import HarrisRecursive
 
 import argparse
@@ -200,67 +201,23 @@ def build_dataset_config(args, for_hash_only=False):
     from dsec_utils import generate_dataset_hash
     dataset_hash = generate_dataset_hash(**hash_params)
     
-    full_config = {
-        'shape_class': 'star8',
+    # Build full config from hash_params and add extra parameters
+    full_config = hash_params.copy()
+    full_config.update({
         'seq_name': f'knn_mlp_{dataset_hash}',
-        'total_frames': args.total_frames,
-        'image_width': args.img_size[1],
-        'image_height': args.img_size[0],
         'face_color': 'black',
-        'num_points': args.num_points,
-        'outer_radius': args.outer_radius,
-        'inner_radius': args.inner_radius,
-        'number_of_rotations': args.num_rotations,
-        'foreground_texture': foreground_texture,
-        'background_texture': background_texture,
-        'fg_image_path': fg_image_path,
-        'bg_image_path': bg_image_path,
-        'use_random_dtd_texture': getattr(args, 'use_random_dtd_texture', False),
-        'dtd_texture_mode': getattr(args, 'dtd_texture_mode', 'both'),
-        'dtd_root': getattr(args, 'dtd_root', 'data/dtd/images'),
-        'dtd_fg_seed': getattr(args, 'random_seed', None),  # Use same seed as dataset
+        'dtd_fg_seed': getattr(args, 'random_seed', None),
         'dtd_bg_seed': (getattr(args, 'random_seed', None) + 1) if getattr(args, 'random_seed', None) is not None else None,
-        'animation_fps': getattr(args, 'animation_fps', 10),
-        'animation_frame_step': getattr(args, 'animation_frame_step', 10),
-        'event_animation_fps': getattr(args, 'event_animation_fps', 10),
-        'event_accumulation_ms': getattr(args, 'event_accumulation_ms', 10),
-        'event_generation_method': getattr(args, 'event_generation_method', 'synthetic'),
-        'save_step': 20,
-        'frame_time_us': 1000,
-        'flow_dt_us': 20000,
+        'save_step': None,
+        'flow_dt_us': None,
         'start_ts_us': 0,
-        'test_size': 0.0,  # Don't split - we'll do it ourselves
+        'test_size': 0.0,
         'outdir': 'toy_datasets/data',
         'sanity_check': False,
         'force_regenerate': False,
         'generate_animation': False,
         'auto_name': False,
-        # v2e parameters (used only if event_generation_method='v2e')
-        'v2e_pos_thres': 0.2,
-        'v2e_neg_thres': 0.2,
-        'v2e_sigma_thres': 0.,
-        'v2e_cutoff_hz': 0,
-        'v2e_leak_rate_hz': 0.0,
-        'v2e_shot_noise_rate_hz': 0.0,
-        'v2e_refractory_period_s': 0.0,
-        'v2e_seed': args.random_seed,
-        'v2e_photoreceptor_noise': False,
-        'v2e_leak_jitter_fraction': 0.0,
-        'v2e_noise_rate_cov_decades': 0.0,
-        'v2e_fg_gamma': 2.0,
-        'v2e_bg_gamma': 0.6,
-        'v2e_fg_brightness': 1.0,
-        'v2e_bg_brightness': 1.0,
-        'v2e_temporal_filter_percent': getattr(args, 'v2e_temporal_filter_percent', None),
-        # Intensity-based event generation parameters (used only if event_generation_method='intensity')
-        'intensity_pos_threshold': getattr(args, 'intensity_pos_threshold', 0.05),
-        'intensity_neg_threshold': getattr(args, 'intensity_neg_threshold', 0.05),
-        # Animation parameters
-        'animation_fps': getattr(args, 'animation_fps', 10),
-        'animation_frame_step': getattr(args, 'animation_frame_step', 10),
-        'event_animation_fps': getattr(args, 'event_animation_fps', 10),
-        'event_accumulation_ms': getattr(args, 'event_accumulation_ms', 10),
-    }
+    })
     
     return OmegaConf.create(full_config)
 
@@ -286,10 +243,10 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     
     # Build config dict with all relevant parameters (for hashing)
     config_dict = build_dataset_config(args, for_hash_only=True)
-    
+
     dataset_hash = generate_dataset_hash(**config_dict)
     dataset_path = os.path.join(cache_dir, f"{dataset_hash}_data.pt")
-    
+
     # Print dataset configuration
     print("\n" + "="*70)
     print("📋 DATASET GENERATION CONFIG")
@@ -330,7 +287,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     # -------------------------------
     generator = None  # Will be created if needed for animation
     frame_time_us = config_dict['frame_time_us']  # Always available from config_dict
-    
+
     if os.path.exists(dataset_path) and not args.force_regenerate:
         print(f"🔹 Loading cached dataset from {dataset_path}")
         data = torch.load(dataset_path, weights_only=False)
@@ -342,22 +299,22 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         if args.toy_dataset == "star8":
             # Create config for DatasetGenerator using shared builder
             cfg = build_dataset_config(args, for_hash_only=False)
-            
+
             # Create generator
             generator = DatasetGenerator(cfg)
-            
+
             # Access the shape instance directly to generate events
             # This avoids generating full dataset files when we only need events
             generator._create_shape_instance()
             data_array = generator._generate_events()
-            
+
             # Update config_dict with actual selected texture paths
             # After _create_shape_instance() -> _build_texture_params(), the paths are in generator.config
             if generator.config.get('fg_image_path'):
                 config_dict['fg_image_path'] = generator.config.fg_image_path
             if generator.config.get('bg_image_path'):
                 config_dict['bg_image_path'] = generator.config.bg_image_path
-            
+
             # Print selected texture paths if DTD was used
             if config_dict.get('use_random_dtd_texture'):
                 print("\n" + "="*70)
@@ -370,7 +327,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
                 print("="*70 + "\n")
         else:
             raise ValueError(f"Unknown toy dataset: {args.toy_dataset}")
-        
+
         data = numpy2pyg_event_convertor(data_array)
         data["v"] = torch.tensor(np.array([data_array["v_x"], data_array["v_y"]])).T     
         # Multiply tau by frame_time_us to get actual time constant in us
@@ -388,7 +345,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
 
         torch.save(data, dataset_path)
         print(f"💾 Dataset cached at {dataset_path}")
-    
+
     # -------------------------------
     # Save config file (always, even if dataset was cached)
     # -------------------------------
@@ -399,7 +356,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         print(f"📋 Dataset config saved at {config_save_path}")
     else:
         print(f"📋 Config file already exists at {config_save_path}")
-    
+
     # -------------------------------
     # Optionally create animation (always, even if dataset was cached)
     # -------------------------------
@@ -414,7 +371,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
                         cfg = build_dataset_config(args, for_hash_only=False)
                         generator = DatasetGenerator(cfg)
                         generator._create_shape_instance()
-                
+
                 # Use texture-aware animation if textures are enabled
                 if config_dict.get('foreground_texture') or config_dict.get('background_texture'):
                     print("   Creating animation with textures...")
@@ -454,11 +411,13 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         print(f"   Temporal extent: t[{data.pos[:,2].min().item():.2f}, {data.pos[:,2].max().item():.2f}]")
         
         # Normalize time so that frame_time_us distance equals 1.0 spatial unit
-        data.pos[:, 2] = data.pos[:, 2] / frame_time_us
+        # Use a copy to avoid modifying the original data
+        pos_normalized = data.pos.clone()
+        pos_normalized[:, 2] = pos_normalized[:, 2] / frame_time_us
         print("   Normalized temporal extent after scaling:", flush=True)
-        print(f"                    t[{data.pos[:,2].min().item():.2f}, {data.pos[:,2].max().item():.2f}]")
+        print(f"                    t[{pos_normalized[:,2].min().item():.2f}, {pos_normalized[:,2].max().item():.2f}]")
         print("   Computing kNN indices (this may take a while for large datasets)...", flush=True)
-        knn_idx = knn_indices_from_pos(data.pos, args.k)
+        knn_idx = knn_indices_from_pos(pos_normalized, args.k)
         torch.save(knn_idx, knn_path)
         print(f"💾 kNN index cached at {knn_path}")
 
@@ -472,10 +431,14 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
             [data.pos[:, 0:2], data.pos[:, 0:2], data.pos[:, 0:1]], dim=1
         )
     elif args.feature_type == "original_time_augmented":
-        features = data.pos
+        features = data.pos / torch.tensor([1.0, 1.0, frame_time_us])
     elif args.feature_type == "original_time_augmented_repeated_augmented":
         features = torch.cat(
-            [data.pos, data.pos], dim=1
+            [
+                data.pos / torch.tensor([1.0, 1.0, frame_time_us]),
+                data.pos / torch.tensor([1.0, 1.0, frame_time_us]),
+            ],
+            dim=1,
         )
     elif args.feature_type == "eig":
         features = torch.cat([data.pos[:, 0:2], data["eig"]], dim=1)
@@ -499,7 +462,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     print(f"   Number of nodes: {features.size(0):,}")
     print(f"   Feature dimension: {features.size(1)}")
     print(f"   Total features (nodes × k × dim): {features.size(0) * args.k * features.size(1):,}")
-    
+
     if args.relative_coordinates:
         if args.feature_type == "original":
             relative_feat_indices = [0, 1]
@@ -573,7 +536,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
 # Model
 # -------------------------------
 class KNNMLP(pl.LightningModule):
-    def __init__(self, input_dim, hidden_dim, output_dim, lr):
+    def __init__(self, input_dim, hidden_dim, output_dim, lr, scheduler_type="none"):
         super().__init__()
         self.save_hyperparameters()
         self.model = nn.Sequential(
@@ -621,10 +584,134 @@ class KNNMLP(pl.LightningModule):
         self.val_mse.reset()
 
     def configure_optimizers(self):
-        return torch.optim.Adam(
+        optimizer = torch.optim.Adam(
             self.parameters(),
             lr=self.hparams.lr,
         )
+
+        scheduler_type = getattr(self.hparams, "scheduler_type", "none")
+        if scheduler_type == "none":
+            return optimizer
+
+        # Trainer is attached by Lightning before this is called
+        if getattr(self, "trainer", None) is None:
+            return optimizer
+
+        total_steps = self.trainer.estimated_stepping_batches
+        if total_steps is None or total_steps == 0:
+            return optimizer
+
+        # Select scheduler based on scheduler_type
+        # Each scheduler has its own interval/frequency configuration
+        scheduler = None
+        scheduler_config = {}
+        
+        if scheduler_type == "onecycle":
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=self.hparams.lr,
+                total_steps=total_steps,
+                pct_start=0.1,
+                anneal_strategy="cos",
+            )
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "step",      # OneCycleLR updates per batch
+                "frequency": 1,
+            }
+        elif scheduler_type == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=total_steps,
+                eta_min=self.hparams.lr * 1e-4,
+            )
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "epoch",     # CosineAnnealingLR updates per epoch
+                "frequency": 1,
+            }
+        elif scheduler_type == "linear":
+            scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1.0,
+                end_factor=0.1,
+                total_iters=total_steps,
+            )
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "epoch",     # LinearLR updates per epoch
+                "frequency": 1,
+            }
+        else:
+            raise ValueError(f"Unknown scheduler_type: {scheduler_type}")
+
+        if scheduler is None:
+            return optimizer
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler_config,
+        }
+
+# -------------------------------
+# Model (order invariant version)
+# -------------------------------
+class KNNMLPOrderInvariant(KNNMLP):
+    """
+    Order-invariant version of KNNMLP that aggregates neighbor features
+    using permutation-invariant operations (mean pooling).
+    
+    Inherits training_step, validation_step, and configure_optimizers from KNNMLP.
+    """
+    def __init__(self, input_dim, hidden_dim, output_dim, K, lr, scheduler_type="none"):
+        # Call parent __init__ with dummy model that will be replaced
+        super().__init__(input_dim, hidden_dim, output_dim, lr, scheduler_type)
+        
+        # Save K as additional hyperparameter (parent already saved the rest)
+        self.hparams.K = K
+        self.K = K
+        assert input_dim % K == 0, "Input dimension must be divisible by K"
+        self.F = input_dim // K  # Original feature dimension per neighbor
+        
+        # Replace the sequential model with order-invariant architecture
+        self.mlp = nn.Sequential(
+            nn.Linear(2 * self.F, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+        )
+        
+        self.post_mlp = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+        )          
+        self.out = nn.Linear(hidden_dim, output_dim)
+        
+        # Remove the simple sequential model from parent
+        del self.model
+
+    def forward(self, batch):
+        if isinstance(batch, (list, tuple)):
+            x, _ = batch  # ignore y
+        else:
+            x = batch
+        # Reshape to [N, K, F]
+        x_reshaped = x.view(-1, self.K, self.F)
+        # Get central node and neighbor features
+        x_i = x_reshaped[:, 0, :]  # Central node features [N, F]
+        neighbor_feats = x_reshaped[:, 1:, :]  # Neighbor features [N, K-1, F]
+        # Concatenate central node features with each neighbor
+        central_expanded = x_i.unsqueeze(1).expand(-1, self.K - 1, -1)  # [N, K-1, F]
+        concat_feats = torch.cat([central_expanded, neighbor_feats], dim=-1)  # [N, K-1, 2F]
+        # Pass through MLP  
+        mlp_out = self.mlp(concat_feats)  # [N, K-1, hidden_dim]
+        # Aggregate using mean (order-invariant)
+        agg = mlp_out.mean(dim=1)  # [N, hidden_dim]
+        # Further processing
+        agg = self.post_mlp(agg)  # [N, hidden_dim]
+        # Final output layer
+        out = self.out(agg)  # [N, output_dim]
+        return out
 
 
 # -------------------------------
@@ -679,12 +766,23 @@ def train(args):
     # -------------------
     # Model
     # -------------------
-    model = KNNMLP(
-        input_dim=train_loader.dataset.tensors[0].shape[1],
-        hidden_dim=args.hidden_dim,
-        output_dim=2,
-        lr=args.lr,
-    )
+    if args.model_variant == "knnmlporder":
+        model = KNNMLPOrderInvariant(
+            input_dim=train_loader.dataset.tensors[0].shape[1],
+            hidden_dim=args.hidden_dim,
+            output_dim=2,
+            K=args.k,
+            lr=args.lr,
+            scheduler_type=args.scheduler,
+        )
+    else:  # knnmlp (default)
+        model = KNNMLP(
+            input_dim=train_loader.dataset.tensors[0].shape[1],
+            hidden_dim=args.hidden_dim,
+            output_dim=2,
+            lr=args.lr,
+            scheduler_type=args.scheduler,
+        )
     callback_list = []
     callback_list.append(LearningRateMonitor(logging_interval="step"))
     callback_list.append(TQDMProgressBar(refresh_rate=500))
@@ -721,7 +819,7 @@ def train(args):
 # -------------------------------
 # Evaluation Pipeline
 # -------------------------------
-def evaluate_run(run_id: str, args):
+def evaluate_run(run_path: str, args):
     """
     Evaluate a trained wandb run on the test set and save results.
 
@@ -732,21 +830,28 @@ def evaluate_run(run_id: str, args):
     """
 
     # -------------------
-    # Load wandb run config
+    # Load wandb run config and merge with command-line args
     # -------------------
     api = wandb.Api()
-    run = api.run(f"{args.entity}/{args.project}/{run_id}")  # entity = user or team
+    run = api.run(run_path)
     config = run.config
 
-    # update args with wandb config
+    # Get the set of arguments that were explicitly provided on command line
+    provided_args = getattr(args, '_provided_args', set())
+    
+    # Update args with wandb config, but keep command-line overrides
     for k, v in config.items():
+        if k == 'dataset_config':
+            # Skip dataset_config - it will be regenerated from args
+            continue
         if k in args.__dict__:
-            args.__dict__[k] = v
-
-    # print args properly
-    print(f"🔹 Using args:")
-    for k, v in args.__dict__.items():
-        print(f"    {k}: {v}")
+            # If this argument was explicitly provided on command line, keep it
+            if k in provided_args:
+                print(f"🔸 Using command-line value for '{k}': {getattr(args, k)}")
+            else:
+                # Otherwise, use the wandb config value
+                args.__dict__[k] = v
+    
 
     # -------------------
     # Create dataset
@@ -760,19 +865,59 @@ def evaluate_run(run_id: str, args):
     # -------------------
     # Load model from checkpoint
     # -------------------
-    model = KNNMLP(
-        input_dim=X_train.shape[1],
-        hidden_dim=config["hidden_dim"],
-        output_dim=2,
-        lr=config["lr"],
+    # Determine which model class to use based on model_variant
+    if args.model_variant == "knnmlporder":
+        model = KNNMLPOrderInvariant(
+            input_dim=X_train.shape[1],
+            hidden_dim=args.hidden_dim,
+            output_dim=2,
+            K=args.k,
+            lr=args.lr,
+            scheduler_type=args.scheduler,
+        )
+    else:  # knnmlp (default)
+        model = KNNMLP(
+            input_dim=X_train.shape[1],
+            hidden_dim=args.hidden_dim,
+            output_dim=2,
+            lr=args.lr,
+            scheduler_type=args.scheduler,
+        )
+    
+    # Construct checkpoint directory path (relative to project root)
+    ckpt_dir = os.path.join(
+        args.log_dir, args.project, args.project, run.id, "checkpoints"
     )
-    ckpt_path = os.path.join(
-        args.log_dir, args.project, args.project, run_id, "checkpoints", "*.ckpt"
-    )
-    ckpt_path = glob(ckpt_path)[0]  # get the first checkpoint
-    if not os.path.exists(ckpt_path):
-        raise FileNotFoundError(f"No checkpoint found in wandb artifact at {ckpt_path}")
-    model = KNNMLP.load_from_checkpoint(ckpt_path)
+    ckpt_pattern = os.path.join(ckpt_dir, "*.ckpt")
+    
+    # Try to find checkpoint locally first
+    ckpt_path_list = glob(ckpt_pattern)
+    
+    # If not found locally, try to fetch from HPC
+    if len(ckpt_path_list) == 0:
+        print(f"🔹 Checkpoint not found locally at {ckpt_pattern}")
+        print(f"🔹 Attempting to retrieve from HPC...")
+        
+        # Use ensure_local_file to fetch the checkpoint directory
+        # This will handle HPC detection and rsync automatically
+        ensure_local_file(ckpt_dir, verbose=True)
+        
+        # Try glob again after potential rsync
+        ckpt_path_list = glob(ckpt_pattern)
+    
+    if len(ckpt_path_list) == 0:
+        raise FileNotFoundError(
+            f"No checkpoint found at {ckpt_pattern}. "
+            f"Tried local search and HPC retrieval (if not on HPC)."
+        )
+    
+    ckpt_path = ckpt_path_list[0]  # take the first checkpoint
+    print(f"✅ Loading model checkpoint from {ckpt_path}")
+    # Load from checkpoint using the appropriate model class
+    if args.model_variant == "knnmlporder":
+        model = KNNMLPOrderInvariant.load_from_checkpoint(ckpt_path)
+    else:
+        model = KNNMLP.load_from_checkpoint(ckpt_path)
 
     # -------------------
     # Lightning evaluation
@@ -792,7 +937,7 @@ def evaluate_run(run_id: str, args):
     # -------------------
     # Save outputs
     # -------------------
-    save_dir = os.path.join(args.log_dir, args.project, "evaluations", run_id)
+    save_dir = os.path.join(args.log_dir, args.project, "evaluations", run.id)
     os.makedirs(save_dir, exist_ok=True)
     out_path = os.path.join(save_dir, f"predictions.pt")
     torch.save(
@@ -1072,6 +1217,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--hidden_dim", type=int, default=64, help="Hidden dimension of MLP"
     )
+    parser.add_argument(
+        "--model_variant",
+        type=str,
+        default="knnmlp",
+        choices=["knnmlp", "knnmlporder"],
+        help="Model variant: 'knnmlp' (standard sequential) or 'knnmlporder' (order-invariant with mean pooling)",
+    )
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        default="none",
+        choices=["none", "onecycle", "cosine", "linear"],
+        help="Learning rate scheduler type: 'none' (no scheduler), 'onecycle' (OneCycleLR), 'cosine' (CosineAnnealingLR), 'linear' (LinearLR)",
+    )
 
     # Training params
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
@@ -1102,23 +1261,33 @@ if __name__ == "__main__":
 
     # Evaluation
     parser.add_argument(
-        "--eval_run_id",
+        "--eval_run_path",
         type=str,
         default=None,
-        help="If set, load model from this wandb run ID and evaluate train+test.",
+        help="If set, load model from this wandb run path and evaluate train+test.",
     )
 
     # Parse args
     args = parser.parse_args()
     
     # Use random_seed as default for other seeds if not explicitly set
-    # Use random_seed as default for other seeds if not explicitly set
     if args.test_split_seed is None:
         args.test_split_seed = args.random_seed
     if args.v2e_seed is None:
         args.v2e_seed = args.random_seed
 
-    if args.eval_run_id is not None:
-        evaluate_run(args.eval_run_id, args)
+    if args.eval_run_path is not None:
+        
+        # Track which arguments were explicitly provided on command line
+        # This helps evaluate_run know which values to override from wandb
+        import sys
+        provided_args = set()
+        for arg in sys.argv[1:]:
+            if arg.startswith('--'):
+                arg_name = arg[2:].replace('-', '_')
+                provided_args.add(arg_name)
+        args._provided_args = provided_args
+        
+        evaluate_run(args.eval_run_path, args)
     else:
         train(args)
