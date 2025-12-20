@@ -376,8 +376,8 @@ class DatasetGenerator:
                     noise_rate_cov_decades=cfg.v2e_noise_rate_cov_decades,
                     fg_gamma=cfg.v2e_fg_gamma,
                     bg_gamma=cfg.v2e_bg_gamma,
-                    fg_brightness_scale=cfg.v2e_fg_brightness,
-                    bg_brightness_scale=cfg.v2e_bg_brightness,
+                    fg_scale=cfg.v2e_fg_brightness,
+                    bg_scale=cfg.v2e_bg_brightness,
                     temporal_filter_percent=cfg.get('v2e_temporal_filter_percent', None),
                 )
             except ImportError as e:
