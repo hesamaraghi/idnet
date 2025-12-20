@@ -22,9 +22,11 @@ def main():
         "toy_dataset": ["star8"],
         "test_train_split": ["temporal"], #"random", "temporal"
         "random_seed": [42, 420, 4200, 42000, 420000, 0, 10, 100, 1000, 10000],
-        "k": [50],
+        "k": [50, 100, 200],
         # Data params
-        "event_generation_method": ["v2e"],  # "synthetic" or "v2e"
+        "event_generation_method": ["intensity"],  # "synthetic" or "v2e" or "intensity"
+        "intensity_pos_threshold": [0.02],
+        "intensity_neg_threshold": [0.02],
         # "img_size": [[256, 256]],
         # "total_frames": [2000],
         # "num_points": [5],
@@ -33,17 +35,19 @@ def main():
         # "num_rotations": [2],
         
         # Texture params (optional - uncomment to use)
-        "use_random_dtd_texture": [True],
-        "dtd_texture_mode": ["foreground"],  # "foreground", "background", or "both"
+        # "use_random_dtd_texture": [True],
+        # "dtd_texture_mode": ["foreground"],  # "foreground", "background", or "both"
+        "foreground_texture": ["image"],
+        "fg_image_path": ["data/dtd/images/woven/woven_0053.jpg"],
         
         "create_animation": [True],
         
         # V2E params
-        "v2e_pos_thres": [0.2],
-        "v2e_neg_thres": [0.2],
-        "v2e_fg_gamma": [2.0],
-        "v2e_bg_gamma": [0.6],
-        "v2e_temporal_filter_percent": [2.0, 4.0],  # Keep first X% of each frame
+        # "v2e_pos_thres": [0.2],
+        # "v2e_neg_thres": [0.2],
+        # "v2e_fg_gamma": [2.0],
+        # "v2e_bg_gamma": [0.6],
+        # "v2e_temporal_filter_percent": [2.0, 4.0],  # Keep first X% of each frame
         
         # Dataset params
         "test_train_split": ["temporal"],
@@ -55,7 +59,7 @@ def main():
         "max_epochs": [500],
         "batch_size": [1024], 
         "relative_coordinates": [True],
-        "project": ["knn-mlp-regression-relative-multiseed-texture-v2e"],
+        "project": ["knn-mlp-regression-relative-multiseed-texture-intensity"],
         "online" : [True],
     }
     # search_space = {
