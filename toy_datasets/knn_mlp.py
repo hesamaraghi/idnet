@@ -59,9 +59,9 @@ def knn_indices_from_pos(pos: torch.Tensor, k: int) -> torch.Tensor:
         res = faiss.StandardGpuResources()
         index = faiss.GpuIndexFlatL2(res, d)
         print("   Using GPU for kNN computation")
-    except (RuntimeError, AttributeError) as e:
+    except Exception as e:
         # Fall back to CPU if GPU not available
-        print(f"   ⚠️  GPU not available ({type(e).__name__}), falling back to CPU for kNN computation")
+        print(f"   ⚠️  GPU not available ({type(e).__name__}:{e}), falling back to CPU for kNN computation")
         index = faiss.IndexFlatL2(d)
     
     index.add(pos_np)
