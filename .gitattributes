@@ -1,2 +1,2 @@
-idn/checkpoint/*.pt filter=lfs diff=lfs merge=lfs -text# SCM syntax highlighting & preventing 3-way merges
+idn/checkpoint/*.pt filter=lfs diff=lfs merge=lfs -text
 pixi.lock merge=binary linguist-language=YAML linguist-generated=true
