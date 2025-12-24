@@ -241,7 +241,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     # -------------------------------
     # Use the same hash function as DatasetGenerator for consistency
     from dsec_utils import generate_dataset_hash
-    
+
     # Build config dict with all relevant parameters (for hashing)
     config_dict = build_dataset_config(args, for_hash_only=True)
 
@@ -410,7 +410,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         print(f"   Spatial extent:  x[{data.pos[:,0].min().item():.1f}, {data.pos[:,0].max().item():.1f}]")
         print(f"                    y[{data.pos[:,1].min().item():.1f}, {data.pos[:,1].max().item():.1f}]")
         print(f"   Temporal extent: t[{data.pos[:,2].min().item():.2f}, {data.pos[:,2].max().item():.2f}]")
-        
+
         # Normalize time so that frame_time_us distance equals 1.0 spatial unit
         # Use a copy to avoid modifying the original data
         pos_normalized = data.pos.clone()
@@ -448,7 +448,14 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     elif args.feature_type == "both":
         features = torch.cat([data.pos[:, 0:2], data["eig"], data["filter"]], dim=1)
     elif args.feature_type == "both_time_augmented":
-        features = torch.cat([data.pos, data["eig"], data["filter"]], dim=1)
+        features = torch.cat(
+            [
+                data.pos / torch.tensor([1.0, 1.0, frame_time_us]),
+                data["eig"],
+                data["filter"],
+            ],
+            dim=1,
+        )
     elif args.feature_type == "eig_exclude_xy":
         features = data["eig"]
     elif args.feature_type == "filter_exclude_xy":
@@ -505,16 +512,16 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         print("Using absolute coordinates for kNN features")
         X_with_neighbors = build_knn_features(features, knn_idx)
     Y = data.v
-    
+
     # -------------------------------
     # Filter out None values in labels
     # -------------------------------
     total_samples = Y.size(0)
     # Check for NaN or inf values in labels (vectorized)
     valid_mask = ~(torch.isnan(Y).any(dim=1) | torch.isinf(Y).any(dim=1))
-    
+
     num_invalid = (~valid_mask).sum().item()
-    
+
     if num_invalid > 0:
         print("\n" + "="*70)
         print("⚠️  WARNING: Found invalid (None/NaN/Inf) values in labels!")
@@ -525,17 +532,17 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         print(f"   Valid samples remaining: {valid_mask.sum().item():,}")
         print(f"   Valid percentage: {(valid_mask.sum().item()/total_samples)*100:.2f}%")
         print("="*70 + "\n")
-        
+
         # Filter out invalid samples
         X_with_neighbors = X_with_neighbors[valid_mask]
         Y = Y[valid_mask]
         features = features[valid_mask]
         knn_idx = knn_idx[valid_mask]
-        
+
         print(f"✅ Filtered data shapes after removing invalid labels:")
         print(f"   X_with_neighbors: {X_with_neighbors.shape}")
         print(f"   Y (labels): {Y.shape}")
-    
+
     print("X_with_neighbors shape:", X_with_neighbors.shape, flush=True)
     if args.test_train_split == "random":
         indices = np.arange(X_with_neighbors.shape[0])       
@@ -559,7 +566,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     data_array = pyg2numpy_event_convertor(data)
     data_array_train = data_array[idx_train]
     data_array_val = data_array[idx_val]
-    
+
     # Return config_dict for wandb logging
     return X_train, Y_train, X_val, Y_val, data_array_train, data_array_val, config_dict
 
