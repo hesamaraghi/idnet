@@ -420,11 +420,11 @@ class ShapeMovementBase(ABC):
         # Import shot noise function if needed
         if shot_noise_rate_hz > 0:
             try:
-                from external.v2e.v2ecore.emulator_utils import generate_shot_noise
+                from v2ecore.emulator_utils import generate_shot_noise
                 print(f"📊 Shot noise enabled: {shot_noise_rate_hz} Hz per pixel")
-            except ImportError:
-                print("⚠️  WARNING: Could not import generate_shot_noise from external.v2e.v2ecore.emulator_utils")
-                print("   Shot noise will be disabled. Make sure v2e is properly installed.")
+            except ImportError as e:
+                print(f"⚠️  WARNING: Could not import generate_shot_noise from external.v2e.v2ecore.emulator_utils: {e}")
+                print( "    Shot noise will be disabled. Make sure v2e is properly installed.")
                 shot_noise_rate_hz = 0.0
         
         # Render first frame
