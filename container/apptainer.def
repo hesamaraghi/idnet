@@ -1,0 +1,19 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%post
+    # Update OS and install dependencies
+    apt-get update && apt-get install -y \
+        curl \
+        ca-certificates \
+        git \
+        build-essential \
+        python3 \
+        python3-venv \
+        python3-pip
+
+    # Install Pixi
+    curl -fsSL https://pixi.sh/install.sh | bash
+
+%environment
+    export PATH="$HOME/.pixi/bin:$PATH"
