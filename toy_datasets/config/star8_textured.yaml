@@ -42,5 +42,5 @@ face_color: black
 
 # Generation flags
 sanity_check: true
-generate_animation: false
-auto_name: false
+generate_animation: true
+auto_name: true

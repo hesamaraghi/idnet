@@ -13,32 +13,32 @@ dataset:
 
 # Model architecture (minimal config for training)
 model:
-  name: TinyIDEDEQIDO  # or NanoIDEDEQIDO
-  hidden_dim: 32
-  input_dim: 8
-  mask_channels: 16
+  name: NanoIDEDEQIDO # TinyIDEDEQIDO or NanoIDEDEQIDO
+  hidden_dim: 16
+  input_dim: 16
+  mask_channels: 32
 
 # Training hyperparameters (only what's needed for generate_and_train)
 training:
   delta_t_ms: null  # Auto-calculated from dataset.save_step * dataset.frame_time_us / 1000
-  num_bins: 15
-  epochs: 100
+  num_bins: 5
+  epochs: 500
   
   # Feature extraction
   add_eigenvalues: true
   add_filter_values: true
-  filter_size: 7
+  filter_size: 5
   normalize_voxel: true
-  tau: 15000
+  tau: 1000
   
   # Optimization
   lr: 1.0e-4
   optimizer: adam
-  batch_size: 6
+  batch_size: 3
   random_crop: null  # or "192x192"
   seed: null
 
 # Wandb settings (optional)
 wandb:
-  project: idnet-toy-datasets
+  project: null
   entity: null
