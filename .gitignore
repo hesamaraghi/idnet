@@ -2,6 +2,7 @@ __pycache__/
 .vscode/
 .github
 data/*
+outputs/
 !data/.gitkeep
 sbatch_folder
 slurm_output
