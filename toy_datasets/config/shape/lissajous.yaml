@@ -1,0 +1,10 @@
+# Lissajous shape configuration
+
+shape_class: lissajous
+shape_type: star
+seq_name: lissajous
+
+# Lissajous-specific parameters
+freq_ratio_a: 3
+freq_ratio_b: 2
+rotation_speed: 2.0

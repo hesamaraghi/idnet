@@ -1,0 +1,13 @@
+# Textured lissajous with DTD random textures
+# Uses random textures from Describable Textures Dataset
+
+defaults:
+  - lissajous
+  - _self_
+
+seq_name: lissajous_textured
+
+# Texture configuration with DTD random textures
+use_random_dtd_texture: true
+dtd_texture_mode: both  # Random textures for both foreground and background
+random_seed: 42

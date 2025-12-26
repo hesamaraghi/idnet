@@ -1,0 +1,46 @@
+# Star8 dataset configuration with image texture
+# Uses an image file as foreground texture
+
+defaults:
+  - dataset_base
+  - shape: star8
+  - _self_
+
+# Override sequence name
+seq_name: star8_textured
+
+# Override defaults for star8
+total_frames: 2000
+save_step: 20
+
+# Texture configuration - use image file for foreground
+foreground_texture: image
+fg_image_path: null  # Set via CLI or override: --fg-image-path path/to/image.jpg
+fg_image_resize_mode: fill  # fill, fit, or tile
+fg_image_fill_color: white  # Color for empty areas if using 'fit' mode
+
+# Use intensity-based event generation (required for textures)
+event_generation_method: intensity
+
+# Intensity-based event generation parameters
+intensity_pos_threshold: 0.05
+intensity_neg_threshold: 0.05
+intensity_shot_noise_rate_hz: 0.0
+
+# v2e parameters for gamma/brightness (used by intensity method)
+v2e_fg_gamma: 2.0
+v2e_bg_gamma: 0.6
+v2e_fg_brightness: 1.0
+v2e_bg_brightness: 1.0
+
+# Star8-specific parameters
+num_points: 5
+outer_radius: 40
+inner_radius: 20
+number_of_rotations: 2
+face_color: black
+
+# Generation flags
+sanity_check: true
+generate_animation: false
+auto_name: false

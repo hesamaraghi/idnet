@@ -1,0 +1,44 @@
+# Configuration for generate_and_train_hydra.py
+# This combines dataset generation and model training configurations
+
+defaults:
+  - dataset_base  # This provides all dataset.* fields
+  - shape: star8
+  - _self_
+
+# Dataset configuration - inherits all fields from dataset_base
+# Override any dataset parameters here
+dataset:
+  base_name: star8  # Base name for the sequence (variant hash will be appended)
+
+# Model architecture (minimal config for training)
+model:
+  name: TinyIDEDEQIDO  # or NanoIDEDEQIDO
+  hidden_dim: 32
+  input_dim: 8
+  mask_channels: 16
+
+# Training hyperparameters (only what's needed for generate_and_train)
+training:
+  delta_t_ms: null  # Auto-calculated from dataset.save_step * dataset.frame_time_us / 1000
+  num_bins: 15
+  epochs: 100
+  
+  # Feature extraction
+  add_eigenvalues: true
+  add_filter_values: true
+  filter_size: 7
+  normalize_voxel: true
+  tau: 15000
+  
+  # Optimization
+  lr: 1.0e-4
+  optimizer: adam
+  batch_size: 6
+  random_crop: null  # or "192x192"
+  seed: null
+
+# Wandb settings (optional)
+wandb:
+  project: idnet-toy-datasets
+  entity: null

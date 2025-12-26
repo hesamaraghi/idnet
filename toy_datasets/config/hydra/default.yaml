@@ -1,0 +1,13 @@
+# Hydra configuration for toy dataset generation
+# This controls Hydra's behavior (output directories, etc.)
+
+run:
+  dir: toy_datasets/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+sweep:
+  dir: toy_datasets/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  subdir: ${hydra.job.num}
+
+job:
+  name: generate_dataset
+  chdir: false  # Don't change working directory

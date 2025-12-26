@@ -1,0 +1,90 @@
+# Wandb sweep for textured datasets
+# Tests different texture configurations and event generation parameters
+
+program: toy_datasets/generate_and_train_hydra.py
+project: toydataset-nano-idnet-all-textured  # wandb project name
+method: grid
+metric:
+  name: nonrec/star8_textured_test/final_prediction_nonseq/L1/avg
+  goal: minimize
+
+# Hydra configuration
+command:
+  - ${env}
+  - python
+  - ${program}
+  - ${args_no_hyphens}
+
+parameters:
+  # Base dataset config - use textured star8
+  dataset.base_name:
+    value: star8_textured
+  
+  dataset.save_step:
+    values: [20]
+  
+  dataset.total_frames:
+    value: 2000
+  
+  # Texture configuration
+  # dataset.foreground_texture:
+  #   value: image
+  
+  # dataset.fg_image_path:
+  #   values:
+  #     - data/dtd/images/woven/woven_0053.jpg
+  #     - data/dtd/images/banded/banded_0001.jpg
+  #     - data/dtd/images/marbled/marbled_0095.jpg
+  
+  dataset.event_generation_method:
+    value: intensity
+  
+  # Event generation thresholds
+  dataset.intensity_pos_threshold:
+    values: [0.05]
+  
+  dataset.intensity_neg_threshold:
+    values: [0.05]
+  
+  # Performance optimization - disable animations
+  dataset.generate_animation:
+    value: true
+  
+  dataset.generate_event_animation:
+    value: true
+  
+  # Model configuration
+  model.name:
+    value: NanoIDEDEQIDO
+  
+  model.hidden_dim:
+    values: [16]
+
+  model.input_dim:
+    values: [16]
+
+  model.mask_channels:
+    values: [32]
+  
+  # Training configuration
+  training.add_eigenvalues:
+    value: true
+  
+  training.add_filter_values:
+    value: true
+
+  training.filter_size:
+    values: [5]
+
+  training.normalize_voxel:
+    value: true
+  
+  training.tau:
+    values: [1000]
+
+  training.num_bins:
+    values: [5]
+
+  training.epochs:
+    value: 500
+

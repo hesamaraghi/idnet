@@ -31,7 +31,6 @@ Direct usage:
 
 import os
 import sys
-import subprocess
 import hydra
 from omegaconf import OmegaConf, DictConfig
 from pathlib import Path
@@ -40,6 +39,7 @@ from pathlib import Path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from toy_datasets.dataset_generator import DatasetGenerator
+from idn.utils.trainer import Trainer
 
 
 @hydra.main(version_base=None, config_path="config", config_name="generate_and_train")
@@ -127,98 +127,97 @@ def main(cfg: DictConfig):
     print("STEP 2: Training Model")
     print("="*80)
     
-    # Get parent directory for training
-    parent_dir = Path(__file__).parent.parent
+    # Load training configuration (need to clear GlobalHydra first since we're already in a Hydra context)
+    from hydra.core.global_hydra import GlobalHydra
+    GlobalHydra.instance().clear()
     
-    # Build training command with Hydra overrides
-    training_cmd = [sys.executable, "-m", "idn.train_toy_dataset"]
+    with hydra.initialize(version_base=None, config_path="../idn/config"):
+        training_cfg = hydra.compose(config_name="id_train_original_toydataset_tiny")
     
-    training_overrides = []
+    # Override training config with our parameters
+    training_cfg.dataset.common.data_root = data_root
+    # training_cfg.dataset.common.test_root = data_root
+    training_cfg.dataset.train.delta_t_ms = cfg.training.delta_t_ms
     
-    # Override data_root to point to the variant directory
-    training_overrides.append(f"dataset.common.data_root={data_root}")
+    # Model architecture
+    if cfg.model.get('name'):
+        training_cfg.model.name = cfg.model.name
+    if cfg.model.get('hidden_dim') is not None:
+        training_cfg.model.hidden_dim = cfg.model.hidden_dim
+    if cfg.model.get('input_dim') is not None:
+        training_cfg.model.input_dim = cfg.model.input_dim
+    if cfg.model.get('mask_channels') is not None:
+        training_cfg.model.mask_channels = cfg.model.mask_channels
     
-    # Set wandb run name to include variant hash
+    # Training hyperparameters
+    if cfg.training.get('num_bins') is not None:
+        training_cfg.dataset.num_voxel_bins = cfg.training.num_bins
+        training_cfg.data_loader.common.num_voxel_bins = cfg.training.num_bins
+        training_cfg.model.num_voxel_bins = cfg.training.num_bins
+    if cfg.training.get('epochs') is not None:
+        training_cfg.num_epoch = cfg.training.epochs
+    
+    # Feature extraction
+    if cfg.training.get('add_eigenvalues') is not None:
+        training_cfg.dataset.train.add_eigenvalues = cfg.training.add_eigenvalues
+        training_cfg.model.add_eigenvalues = cfg.training.add_eigenvalues
+    if cfg.training.get('add_filter_values') is not None:
+        training_cfg.dataset.train.add_filter_values = cfg.training.add_filter_values
+        training_cfg.model.add_filter_values = cfg.training.add_filter_values
+    if cfg.training.get('filter_size') is not None:
+        training_cfg.dataset.train.filter_size = cfg.training.filter_size
+    if cfg.training.get('normalize_voxel') is not None:
+        training_cfg.dataset.train.normalize_voxel = cfg.training.normalize_voxel
+    if cfg.training.get('tau') is not None:
+        training_cfg.dataset.train.tau = cfg.training.tau
+    
+    # Optimization
+    if cfg.training.get('lr') is not None:
+        training_cfg.optim.lr = cfg.training.lr
+    if cfg.training.get('optimizer'):
+        training_cfg.optim.optimizer = cfg.training.optimizer
+    if cfg.training.get('batch_size') is not None:
+        training_cfg.data_loader.train.args.batch_size = cfg.training.batch_size
+    
+    # Random crop
+    if cfg.training.get('random_crop'):
+        if cfg.training.random_crop.lower() == "none":
+            training_cfg.dataset.train.random_crop = None
+        else:
+            crop_size = cfg.training.random_crop.split('x')
+            if len(crop_size) == 2:
+                training_cfg.dataset.train.random_crop = [int(crop_size[0]), int(crop_size[1])]
+    
+    # Set sequences
+    training_cfg.dataset.train.seq = [seq_name]
+    training_cfg.dataset.val.seq = [seq_name_test]
+    training_cfg.validation.nonrec.dataset.train.seq = [seq_name]
+    training_cfg.validation.nonrec.dataset.val.seq = [seq_name_test]
+    
+    # Wandb configuration
     run_name_suffix = f"-ds{cfg.dataset.save_step}-f{cfg.dataset.total_frames}-v{config_hash[:6]}"
+    if cfg.training.get('seed') is not None:
+        run_name_suffix = f"{run_name_suffix}-seed{cfg.training.seed}"
+    training_cfg.wandb.run_name = run_name_suffix
     
     # Pass dataset generation params as environment variables for logging
     os.environ['DATASET_GEN_SAVE_STEP'] = str(cfg.dataset.save_step)
     os.environ['DATASET_GEN_TOTAL_FRAMES'] = str(cfg.dataset.total_frames)
     os.environ['DATASET_GEN_TEST_SIZE'] = str(cfg.dataset.test_size)
     os.environ['DATASET_GEN_VARIANT_HASH'] = config_hash
-    
-    # Training delta_t_ms (always set)
-    training_overrides.append(f"dataset.train.delta_t_ms={cfg.training.delta_t_ms}")
-    
-    # Model architecture parameters
-    if cfg.model.get('name'):
-        training_overrides.append(f"model.name={cfg.model.name}")
-    if cfg.model.get('hidden_dim') is not None:
-        training_overrides.append(f"model.hidden_dim={cfg.model.hidden_dim}")
-    if cfg.model.get('input_dim') is not None:
-        training_overrides.append(f"model.input_dim={cfg.model.input_dim}")
-    if cfg.model.get('mask_channels') is not None:
-        training_overrides.append(f"model.mask_channels={cfg.model.mask_channels}")
-    
-    # Training hyperparameters
-    if cfg.training.get('num_bins') is not None:
-        training_overrides.append(f"dataset.num_voxel_bins={cfg.training.num_bins}")
-        training_overrides.append(f"data_loader.common.num_voxel_bins={cfg.training.num_bins}")
-    if cfg.training.get('epochs') is not None:
-        training_overrides.append(f"num_epoch={cfg.training.epochs}")
-    
-    # Feature extraction hyperparameters
-    if cfg.training.get('add_eigenvalues') is not None:
-        training_overrides.append(f"dataset.train.add_eigenvalues={str(cfg.training.add_eigenvalues).lower()}")
-    if cfg.training.get('add_filter_values') is not None:
-        training_overrides.append(f"dataset.train.add_filter_values={str(cfg.training.add_filter_values).lower()}")
-    if cfg.training.get('filter_size') is not None:
-        training_overrides.append(f"dataset.train.filter_size={cfg.training.filter_size}")
-    if cfg.training.get('normalize_voxel') is not None:
-        training_overrides.append(f"dataset.train.normalize_voxel={str(cfg.training.normalize_voxel).lower()}")
-    if cfg.training.get('tau') is not None:
-        training_overrides.append(f"dataset.train.tau={cfg.training.tau}")
-    
-    # Optimization hyperparameters
-    if cfg.training.get('lr') is not None:
-        training_overrides.append(f"optim.lr={cfg.training.lr}")
-    if cfg.training.get('optimizer'):
-        training_overrides.append(f"optim.optimizer={cfg.training.optimizer}")
-    if cfg.training.get('batch_size') is not None:
-        training_overrides.append(f"data_loader.train.args.batch_size={cfg.training.batch_size}")
-    
-    # Random crop
-    if cfg.training.get('random_crop'):
-        if cfg.training.random_crop.lower() == "none":
-            training_overrides.append(f"dataset.train.random_crop=null")
-        else:
-            # Parse "192x192" to [192, 192]
-            crop_size = cfg.training.random_crop.split('x')
-            if len(crop_size) == 2:
-                training_overrides.append(f"dataset.train.random_crop=[{crop_size[0]},{crop_size[1]}]")
-    
-    # Seed handling
     if cfg.training.get('seed') is not None:
-        run_name_suffix = f"{run_name_suffix}-seed{cfg.training.seed}"
         os.environ['TRAINING_SEED'] = str(cfg.training.seed)
     
-    # Set final wandb run name
-    training_overrides.append(f"wandb.run_name={run_name_suffix}")
+    # Print final training config
+    print("\nTraining Configuration:")
+    print(OmegaConf.to_yaml(training_cfg))
     
-    # Override validation sequences
-    training_overrides.append(f"validation.nonrec.dataset.train.seq=[{seq_name}]")
-    training_overrides.append(f"validation.nonrec.dataset.val.seq=[{seq_name_test}]")
-    training_overrides.append(f"dataset.train.seq=[{seq_name}]")
-    training_overrides.append(f"dataset.val.seq=[{seq_name_test}]")
+    # Create and run trainer
+    trainer = Trainer(training_cfg)
     
-    training_cmd.extend(training_overrides)
+    print("\nNumber of parameters:", sum(p.numel() for p in trainer.model.parameters() if p.requires_grad))
     
-    print(f"\nRunning: {' '.join(training_cmd)}")
-    print(f"Overrides: {training_overrides}")
-    print(f"Working directory: {parent_dir}")
-    
-    # Run training with real-time output
-    result = subprocess.run(training_cmd, check=True, cwd=parent_dir)
+    trainer.fit()
     
     print("\n" + "="*80)
     print("✓ Training Complete!")

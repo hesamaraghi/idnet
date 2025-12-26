@@ -1,0 +1,12 @@
+# Star8 dataset configuration
+# Main config file for star8 dataset generation
+
+defaults:
+  - dataset_base
+  - shape: star8
+  - hydra: default
+  - _self_
+
+# Override defaults for star8
+total_frames: 2000
+save_step: 20

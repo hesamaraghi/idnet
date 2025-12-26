@@ -132,8 +132,42 @@ class DatasetGenerator:
         
         return image_path
     
+    def _preselect_dtd_textures(self):
+        """Pre-select DTD textures and update config BEFORE hash generation.
+        
+        This ensures that the selected texture paths are included in the dataset hash,
+        preventing hash collisions for datasets that differ only in DTD texture selection.
+        """
+        cfg = self.config
+        use_dtd = cfg.get('use_random_dtd_texture', False)
+        dtd_mode = cfg.get('dtd_texture_mode', 'both')
+        
+        if use_dtd:
+            dtd_root = cfg.get('dtd_root', 'data/dtd/images')
+            
+            if dtd_mode in ['fg', 'foreground', 'both']:
+                # Use dtd_fg_seed if provided, otherwise fall back to random_seed
+                fg_seed = cfg.get('dtd_fg_seed', cfg.get('random_seed'))
+                dtd_fg_path = str(self._select_random_dtd_texture(dtd_root, fg_seed))
+                OmegaConf.update(cfg, 'foreground_texture', 'image', force_add=True)
+                OmegaConf.update(cfg, 'fg_image_path', dtd_fg_path, force_add=True)
+                print(f"🎨 Pre-selected DTD foreground texture (seed={fg_seed}): {dtd_fg_path}")
+            
+            if dtd_mode in ['bg', 'background', 'both']:
+                # Use dtd_bg_seed if provided, otherwise fall back to random_seed + 1
+                bg_seed = cfg.get('dtd_bg_seed')
+                if bg_seed is None:
+                    bg_seed = (cfg.get('random_seed') + 1) if cfg.get('random_seed') is not None else None
+                dtd_bg_path = str(self._select_random_dtd_texture(dtd_root, bg_seed))
+                OmegaConf.update(cfg, 'background_texture', 'image', force_add=True)
+                OmegaConf.update(cfg, 'bg_image_path', dtd_bg_path, force_add=True)
+                print(f"🎨 Pre-selected DTD background texture (seed={bg_seed}): {dtd_bg_path}")
+    
     def _build_texture_params(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Build texture parameter dictionaries from config.
+        
+        Note: DTD texture selection is now done in _preselect_dtd_textures() before hash generation.
+        This method only builds the parameter dictionaries from the already-configured texture settings.
         
         Returns:
             Tuple of (foreground_params, background_params)
@@ -141,31 +175,6 @@ class DatasetGenerator:
         cfg = self.config
         foreground_params = {}
         background_params = {}
-        
-        # Handle DTD random texture selection
-        use_dtd = cfg.get('use_random_dtd_texture', False)
-        dtd_mode = cfg.get('dtd_texture_mode', 'both')
-        
-        if use_dtd:
-            if dtd_mode in ['fg', 'foreground', 'both']:
-                dtd_root = cfg.get('dtd_root', 'data/dtd/images')
-                # Use dtd_fg_seed if provided, otherwise fall back to random_seed
-                fg_seed = cfg.get('dtd_fg_seed', cfg.get('random_seed'))
-                dtd_fg_path = str(self._select_random_dtd_texture(dtd_root, fg_seed))
-                cfg.foreground_texture = 'image'
-                cfg.fg_image_path = dtd_fg_path
-                print(f"🎨 Using DTD foreground texture (seed={fg_seed}): {dtd_fg_path}")
-            
-            if dtd_mode in ['bg', 'background', 'both']:
-                dtd_root = cfg.get('dtd_root', 'data/dtd/images')
-                # Use dtd_bg_seed if provided, otherwise fall back to random_seed + 1
-                bg_seed = cfg.get('dtd_bg_seed')
-                if bg_seed is None:
-                    bg_seed = (cfg.get('random_seed') + 1) if cfg.get('random_seed') is not None else None
-                dtd_bg_path = str(self._select_random_dtd_texture(dtd_root, bg_seed))
-                cfg.background_texture = 'image'
-                cfg.bg_image_path = dtd_bg_path
-                print(f"🎨 Using DTD background texture (seed={bg_seed}): {dtd_bg_path}")
         
         # Build foreground texture params
         if cfg.get('foreground_texture'):
@@ -509,6 +518,8 @@ class DatasetGenerator:
         ts_rows = []
         idx = 0
         
+        flow_dt_us = int(cfg.save_step * cfg.frame_time_us)
+
         for frame_from in range(split_start_frame, split_end_frame, cfg.save_step):
             frame_to = frame_from + cfg.save_step
             if frame_to > split_end_frame:
@@ -541,8 +552,8 @@ class DatasetGenerator:
             png_path = os.path.join(flow_dir, f"{idx:06d}.png")
             imageio.imwrite(png_path, img16, format="PNG-FI")
             
-            from_ts = 0 + idx * cfg.flow_dt_us
-            to_ts = from_ts + cfg.flow_dt_us
+            from_ts = idx * flow_dt_us
+            to_ts = from_ts + flow_dt_us
             ts_rows.append((from_ts, to_ts))
             
             print(f"[{split}] Saved flow #{idx} : frame {frame_from} -> {frame_to} (valid: {int(valid.sum())} pixels)")
@@ -571,7 +582,7 @@ class DatasetGenerator:
             'image_size': list(self.image_size),
             'save_step': cfg.save_step,
             'frame_time_us': cfg.frame_time_us,
-            'flow_dt_us': cfg.flow_dt_us,
+            'flow_dt_us': int(cfg.save_step * cfg.frame_time_us),
             'start_ts_us': cfg.start_ts_us,
             'test_size': cfg.test_size,
             'split_start_frame': split_start_frame,
@@ -650,9 +661,13 @@ class DatasetGenerator:
         """
         cfg = self.config
         
+        # Pre-select DTD textures if needed (BEFORE hash generation)
+        # This ensures the selected texture paths are included in the dataset hash
+        self._preselect_dtd_textures()
+        
         # Handle auto-naming
         if cfg.auto_name:
-            config_hash = generate_dataset_hash(**cfg.to_dict())
+            config_hash = generate_dataset_hash(**OmegaConf.to_container(cfg, resolve=True))
             outdir = os.path.join(cfg.outdir, f"variant_{config_hash}")
             print(f"🔸 Auto-naming enabled: Using variant directory '{config_hash}'")
         else:
@@ -680,6 +695,7 @@ class DatasetGenerator:
                 "rectify_map_test": None,
                 "num_flow_pairs_test": 0,
                 "skipped": True,
+                "outdir": outdir,
             }
         
         # Create shape instance
@@ -720,6 +736,7 @@ class DatasetGenerator:
             "timestamps_test": ts_path_test,
             "num_flow_pairs_test": num_test,
             "skipped": False,
+            "outdir": outdir,  # Include the actual outdir used (may include variant folder)
         }
         result.update(event_result)
         
@@ -743,7 +760,7 @@ class DatasetGenerator:
         if result.get('skipped', False):
             return result
         
-        outdir = os.path.dirname(os.path.dirname(os.path.dirname(result['flow_dir_train'])))
+        outdir = result['outdir']
         seq_name = cfg.seq_name
         
         # Generate shape movement animation
@@ -844,7 +861,7 @@ class DatasetGenerator:
         print("Running sanity checks...")
         print("="*60)
         
-        outdir = os.path.dirname(os.path.dirname(os.path.dirname(result['flow_dir_train'])))
+        outdir = result['outdir']
         seq_name = cfg.seq_name
         
         print(f"\n[SANITY CHECK] Train split: {seq_name}")

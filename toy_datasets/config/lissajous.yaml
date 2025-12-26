@@ -1,0 +1,12 @@
+# Lissajous dataset configuration
+# Main config file for lissajous dataset generation
+
+defaults:
+  - dataset_base
+  - shape: lissajous
+  - hydra: default
+  - _self_
+
+# Override defaults for lissajous
+total_frames: 2000
+save_step: 20

@@ -1,0 +1,5 @@
+# Shape class configs
+# These define different shape types
+
+shape_class: star8
+seq_name: star8
