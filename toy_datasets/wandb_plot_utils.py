@@ -42,7 +42,25 @@ def filter_label(d: Dict[str, Any], sep: str = ", ", kv: str = "=") -> str:
 
 def fetch_runs(api: wandb.Api, entity: str, project: str, cf: Dict[str, Any]):
     filters = {f"config.{k}": v for k, v in cf.items()}
-    return api.runs(f"{entity}/{project}", filters=filters)
+    runs = api.runs(f"{entity}/{project}", filters=filters)
+    
+    # Workaround: if API filtering returns 0 runs, manually filter by checking run.config
+    if len(runs) == 0 and len(cf) > 0:
+        # Get all runs and manually filter
+        all_runs = api.runs(f"{entity}/{project}")
+        filtered = []
+        for run in all_runs:
+            matches = True
+            for k, v in cf.items():
+                # Check if config key matches the expected value
+                if run.config.get(k) != v:
+                    matches = False
+                    break
+            if matches:
+                filtered.append(run)
+        return filtered
+    
+    return runs
 
 
 def collect_metric_arrays(runs, metric: str, x_axis: str = "epoch"):
@@ -446,6 +464,8 @@ def plot_metric_over_epochs(
     x_axis: str = "epoch",
     x_label: Optional[str] = None,
     y_label: Optional[str] = None,
+    # legend and label controls
+    legend_loc: str = None,
     # caching
     use_cache: bool = True,
     refresh_cache: bool = False,
@@ -474,11 +494,16 @@ def plot_metric_over_epochs(
                     "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
                     "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
                 ]
+        elif isinstance(color_palette, dict):
+            # If color_palette is a dictionary, use it directly for mapping
+            value_to_color = {k: v for k, v in color_palette.items() if k in values}
+            palette = None
         else:
             palette = list(color_palette)
-        # Assign colors in order
-        for i, v in enumerate(values):
-            value_to_color[v] = palette[i % len(palette)]
+        # Assign colors in order (only if using list-based palette)
+        if palette is not None:
+            for i, v in enumerate(values):
+                value_to_color[v] = palette[i % len(palette)]
 
     plt.figure(figsize=figsize)
     plotted_any = False
@@ -535,7 +560,11 @@ def plot_metric_over_epochs(
                         label = label.replace(str(original_value), label_map[original_value])
 
         # Determine color
-        if color_by_key is not None and color_by_key in cf and cf[color_by_key] in value_to_color:
+        # When color_palette is a dict, look up by the transformed label
+        # When using color_by_key with a list palette, look up by the original config value
+        if isinstance(color_palette, dict) and label in color_palette:
+            color = color_palette[label]
+        elif color_by_key is not None and color_by_key in cf and cf[color_by_key] in value_to_color:
             color = value_to_color[cf[color_by_key]]
         else:
             color = None  # let matplotlib decide
@@ -567,7 +596,7 @@ def plot_metric_over_epochs(
     if grid:
         plt.grid(True, alpha=0.3)
     if show_legend:
-        plt.legend(fontsize=fontsize_legend)
+        plt.legend(fontsize=fontsize_legend, loc=legend_loc)
     
     # Set y-axis limits if provided
     if ylim is not None:
