@@ -21,6 +21,7 @@ dataset_cache
 lightning_logs
 *.gif
 */cache
+*.sif
 toy_datasets/outputs
 toy_datasets/evaluations
 toy_datasets/data
