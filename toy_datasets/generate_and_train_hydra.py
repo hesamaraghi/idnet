@@ -12,6 +12,10 @@ Usage in wandb sweep config:
     dataset.save_step: {values: [20, 40, 60]}
     dataset.total_frames: {values: [1000, 2000]}
     training.delta_t_ms: {values: [40, 100]}
+    training.augmentation.vertical_flip: {values: [true, false]}
+    training.augmentation.random_crop: {values: [null, "192x192", "256x256"]}
+    training.augmentation.rotation_degrees: {values: [null, 15, 30]}
+    model.downsample: {values: [2, 4]}
 
 Direct usage:
     # Use default config and override parameters
@@ -19,14 +23,20 @@ Direct usage:
       dataset.save_step=40 dataset.total_frames=2000 \
       training.add_eigenvalues=true training.filter_size=7
     
-    # Use specific shape config
+    # Use specific shape config with augmentation
     python toy_datasets/generate_and_train_hydra.py \
       --config-name=lissajous \
-      dataset.freq_ratio_a=7 dataset.freq_ratio_b=5
+      dataset.freq_ratio_a=7 dataset.freq_ratio_b=5 \
+      training.augmentation.vertical_flip=true \
+      training.augmentation.horizontal_flip=true \
+      training.augmentation.random_crop=192x192
     
-    # Override model architecture
+    # Override model architecture with augmentation
     python toy_datasets/generate_and_train_hydra.py \
-      model.name=NanoIDEDEQIDO model.hidden_dim=8 model.input_dim=4
+      model.name=NanoIDEDEQIDO model.hidden_dim=8 model.input_dim=4 \
+      model.downsample=4 \
+      training.augmentation.vertical_flip=false \
+      training.augmentation.horizontal_flip=true
 """
 
 import os
@@ -142,6 +152,8 @@ def main(cfg: DictConfig):
     # Model architecture
     if cfg.model.get('name'):
         training_cfg.model.name = cfg.model.name
+    if cfg.model.get('downsample') is not None:
+        training_cfg.model.downsample = cfg.model.downsample
     if cfg.model.get('hidden_dim') is not None:
         training_cfg.model.hidden_dim = cfg.model.hidden_dim
     if cfg.model.get('input_dim') is not None:
@@ -179,14 +191,23 @@ def main(cfg: DictConfig):
     if cfg.training.get('batch_size') is not None:
         training_cfg.data_loader.train.args.batch_size = cfg.training.batch_size
     
+    # Data augmentation
+    augmentation_config = cfg.training.get('augmentation', {})
+    
     # Random crop
-    if cfg.training.get('random_crop'):
-        if cfg.training.random_crop.lower() == "none":
+    if augmentation_config.get('random_crop'):
+        if str(augmentation_config.random_crop).lower() == "none":
             training_cfg.dataset.train.random_crop = None
         else:
-            crop_size = cfg.training.random_crop.split('x')
+            crop_size = str(augmentation_config.random_crop).split('x')
             if len(crop_size) == 2:
                 training_cfg.dataset.train.random_crop = [int(crop_size[0]), int(crop_size[1])]
+    
+    # Flip augmentations
+    if augmentation_config.get('vertical_flip') is not None:
+        training_cfg.dataset.train.vertical_flip = augmentation_config.vertical_flip
+    if augmentation_config.get('horizontal_flip') is not None:
+        training_cfg.dataset.train.horizontal_flip = augmentation_config.horizontal_flip
     
     # Set sequences
     training_cfg.dataset.train.seq = [seq_name]
@@ -199,6 +220,14 @@ def main(cfg: DictConfig):
     if cfg.training.get('seed') is not None:
         run_name_suffix = f"{run_name_suffix}-seed{cfg.training.seed}"
     training_cfg.wandb.run_name = run_name_suffix
+
+    # Allow wandb overrides from the CLI-generated config
+    if cfg.wandb.get('project'):
+        training_cfg.wandb.project = cfg.wandb.project
+    if cfg.wandb.get('enabled') is not None:
+        training_cfg.wandb.enabled = cfg.wandb.enabled
+    if cfg.wandb.get('run_name'):
+        training_cfg.wandb.run_name = cfg.wandb.run_name
     
     # Pass dataset generation params as environment variables for logging
     os.environ['DATASET_GEN_SAVE_STEP'] = str(cfg.dataset.save_step)
