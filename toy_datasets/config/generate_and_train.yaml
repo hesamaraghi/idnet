@@ -17,7 +17,7 @@ model:
   hidden_dim: 16
   input_dim: 16
   mask_channels: 32
-
+  
 # Training hyperparameters (only what's needed for generate_and_train)
 training:
   delta_t_ms: null  # Auto-calculated from dataset.save_step * dataset.frame_time_us / 1000
@@ -35,8 +35,13 @@ training:
   lr: 1.0e-4
   optimizer: adam
   batch_size: 3
-  random_crop: null  # or "192x192"
   seed: null
+  
+  # Data augmentation (only implemented augmentations)
+  augmentation:
+    vertical_flip: false
+    horizontal_flip: false
+    random_crop: null  # or "192x192"
 
 # Wandb settings (optional)
 wandb:
