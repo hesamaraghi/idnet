@@ -433,8 +433,8 @@ class Sequence(Dataset):
         self.idx_to_visualize = file[:, 2] if file.shape[1] == 3 else []
 
         # Save output dimensions
-        self.height = 256 #TODO: get from config file
-        self.width = 256 #TODO: get from config file
+        self.height = 480 #TODO: get from config file
+        self.width = 640 #TODO: get from config file
         self.num_bins = num_bins
 
         # Just for now, we always train with num_bins=15
@@ -550,7 +550,27 @@ class Sequence(Dataset):
     def load_flow(flowfile: Path):
         assert flowfile.exists()
         assert flowfile.suffix == '.png'
-        flow_16bit = imageio.imread(str(flowfile), format='PNG-FI')
+        
+        # Robust flow loading that tries PNG-FI first, then falls back to OpenCV
+        # OpenCV correctly preserves 16-bit precision with proper channel reordering
+        flow_16bit = None
+        
+        try:
+            # First try: Use PNG-FI as recommended by DSEC dataset
+            flow_16bit = imageio.imread(str(flowfile), format='PNG-FI')
+        except Exception:
+            try:
+                # Second try: OpenCV with BGR->RGB conversion (preserves 16-bit)
+                flow_bgr = cv2.imread(str(flowfile), cv2.IMREAD_UNCHANGED)
+                if flow_bgr is not None and len(flow_bgr.shape) == 3:
+                    flow_16bit = cv2.cvtColor(flow_bgr, cv2.COLOR_BGR2RGB)
+            except Exception:
+                pass
+        
+        if flow_16bit is None:
+            raise RuntimeError(f'Failed to load 16-bit flow file {flowfile}. '
+                             f'PNG-FI format failed, and OpenCV fallback also failed.')
+        
         flow, valid2D = flow_16bit_to_float(flow_16bit)
         return flow, valid2D
 
