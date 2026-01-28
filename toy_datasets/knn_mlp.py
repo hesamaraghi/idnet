@@ -858,16 +858,14 @@ def train(args):
 # -------------------------------
 # Evaluation Pipeline
 # -------------------------------
-def evaluate_run(run_path: str, args):
+def _setup_run_for_evaluation(run_path: str, args):
     """
-    Evaluate a trained wandb run on the test set and save results.
-
-    Args:
-        run_id: wandb run ID to evaluate
-        args: argparse.Namespace with args used for training
-        save_dir: Directory to save evaluation results
+    Common setup logic for evaluation functions.
+    Loads wandb config, creates dataset, loads model checkpoint.
+    
+    Returns:
+        tuple: (model, train_loader, val_loader, data_array_train, data_array_val, run)
     """
-
     # -------------------
     # Load wandb run config and merge with command-line args
     # -------------------
@@ -890,7 +888,6 @@ def evaluate_run(run_path: str, args):
             else:
                 # Otherwise, use the wandb config value
                 args.__dict__[k] = v
-    
 
     # -------------------
     # Create dataset
@@ -958,6 +955,20 @@ def evaluate_run(run_path: str, args):
     else:
         model = KNNMLP.load_from_checkpoint(ckpt_path)
 
+    return model, train_loader, val_loader, data_array_train, data_array_val, run
+
+
+def evaluate_run(run_path: str, args):
+    """
+    Evaluate a trained wandb run on the test set and save results.
+
+    Args:
+        run_path: wandb run path to evaluate
+        args: argparse.Namespace with args used for training
+    """
+    # Use common setup logic
+    model, train_loader, val_loader, data_array_train, data_array_val, run = _setup_run_for_evaluation(run_path, args)
+
     # -------------------
     # Lightning evaluation
     # -------------------
@@ -997,7 +1008,66 @@ def evaluate_run(run_path: str, args):
         out_path,
     )
 
-    print(f"✅ Predictions + metrics saved at {out_path}")
+    print(f"✅ Predictions saved at {out_path}")
+
+
+def compute_metrics_for_run(run_path: str, args):
+    """
+    Compute metrics for a trained wandb run on train and validation sets.
+
+    Args:
+        run_path: wandb run path (e.g., "project/run_id" or "entity/project/run_id")
+        args: argparse.Namespace with args used for training
+
+    Returns:
+        dict: Computed metrics for train and validation splits
+    """
+    from utils.evaluation_metrics import compute_vector_errors
+    
+    # Use common setup logic
+    model, train_loader, val_loader, data_array_train, data_array_val, run = _setup_run_for_evaluation(run_path, args)
+
+    # -------------------
+    # Generate predictions
+    # -------------------
+    trainer = pl.Trainer(accelerator="auto", devices="auto")
+    preds_train = torch.cat(trainer.predict(model, dataloaders=train_loader), dim=0)
+    preds_val = torch.cat(trainer.predict(model, dataloaders=val_loader), dim=0)
+
+    # -------------------
+    # Compute metrics
+    # -------------------
+    # Extract ground truth labels from data loaders
+    Y_train = train_loader.dataset.tensors[1]
+    Y_val = val_loader.dataset.tensors[1]
+    
+    train_metrics = compute_vector_errors(preds_train, Y_train)
+    val_metrics = compute_vector_errors(preds_val, Y_val)
+
+    # Add run metadata to results
+    results = {
+        "run_id": run.id,
+        "run_path": run_path,
+        "run_name": run.name,
+        "config": dict(run.config),
+        "train_metrics": train_metrics,
+        "val_metrics": val_metrics,
+    }
+
+    # -------------------
+    # Save outputs
+    # -------------------
+    save_dir = os.path.join(args.log_dir, args.project, "evaluations", run.id)
+    os.makedirs(save_dir, exist_ok=True)
+    out_path = os.path.join(save_dir, f"metrics.pt")
+    torch.save(results, out_path)
+    
+    print(f"✅ Computed metrics for run {run.id}")
+    print(f"🔹 Train EPE: {train_metrics['EPE']:.4f}")
+    print(f"🔹 Val EPE: {val_metrics['EPE']:.4f}")
+    print(f"✅ Full metrics saved at {out_path}")
+    
+    return results
 
 
 # -------------------------------
@@ -1312,6 +1382,12 @@ if __name__ == "__main__":
         default=None,
         help="If set, load model from this wandb run path and evaluate train+test.",
     )
+    parser.add_argument(
+        "--compute_metrics_run_path",
+        type=str,
+        default=None,
+        help="If set, load model from this wandb run path and compute metrics only (no data saving).",
+    )
 
     # Parse args
     args = parser.parse_args()
@@ -1335,5 +1411,22 @@ if __name__ == "__main__":
         args._provided_args = provided_args
         
         evaluate_run(args.eval_run_path, args)
+        
+    elif args.compute_metrics_run_path is not None:
+        
+        # Track which arguments were explicitly provided on command line
+        import sys
+        provided_args = set()
+        for arg in sys.argv[1:]:
+            if arg.startswith('--'):
+                arg_name = arg[2:].replace('-', '_')
+                provided_args.add(arg_name)
+        args._provided_args = provided_args
+        
+        results = compute_metrics_for_run(args.compute_metrics_run_path, args)
+        print(f"\n🎯 Results for {args.compute_metrics_run_path}:")
+        print(f"   Train EPE: {results['train_metrics']['EPE']:.4f}")
+        print(f"   Val EPE: {results['val_metrics']['EPE']:.4f}")
+        
     else:
         train(args)
