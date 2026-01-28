@@ -170,28 +170,28 @@ def build_dataset_config(args, for_hash_only=False):
         'event_animation_fps': getattr(args, 'event_animation_fps', 10),
         'event_accumulation_ms': getattr(args, 'event_accumulation_ms', 10),
         # v2e parameters that affect the dataset
-        'v2e_pos_thres': getattr(args, 'v2e_pos_thres', 0.2),
-        'v2e_neg_thres': getattr(args, 'v2e_neg_thres', 0.2),
-        'v2e_sigma_thres': getattr(args, 'v2e_sigma_thres', 0.0),
+        'v2e_pos_thres': float(getattr(args, 'v2e_pos_thres', 0.2)),
+        'v2e_neg_thres': float(getattr(args, 'v2e_neg_thres', 0.2)),
+        'v2e_sigma_thres': float(getattr(args, 'v2e_sigma_thres', 0.0)),
         'v2e_cutoff_hz': getattr(args, 'v2e_cutoff_hz', 0),
-        'v2e_leak_rate_hz': getattr(args, 'v2e_leak_rate_hz', 0.0),
-        'v2e_shot_noise_rate_hz': getattr(args, 'v2e_shot_noise_rate_hz', 0.0),
-        'v2e_refractory_period_s': getattr(args, 'v2e_refractory_period_s', 0.0),
+        'v2e_leak_rate_hz': float(getattr(args, 'v2e_leak_rate_hz', 0.0)),
+        'v2e_shot_noise_rate_hz': float(getattr(args, 'v2e_shot_noise_rate_hz', 0.0)),
+        'v2e_refractory_period_s': float(getattr(args, 'v2e_refractory_period_s', 0.0)),
         'v2e_seed': getattr(args, 'v2e_seed', args.random_seed),
         'v2e_photoreceptor_noise': getattr(args, 'v2e_photoreceptor_noise', False),
-        'v2e_leak_jitter_fraction': getattr(args, 'v2e_leak_jitter_fraction', 0.0),
-        'v2e_noise_rate_cov_decades': getattr(args, 'v2e_noise_rate_cov_decades', 0.0),
-        'v2e_fg_gamma': getattr(args, 'v2e_fg_gamma', 2.0),
-        'v2e_bg_gamma': getattr(args, 'v2e_bg_gamma', 0.6),
-        'v2e_fg_brightness': getattr(args, 'v2e_fg_brightness', 1.0),
-        'v2e_bg_brightness': getattr(args, 'v2e_bg_brightness', 1.0),
+        'v2e_leak_jitter_fraction': float(getattr(args, 'v2e_leak_jitter_fraction', 0.0)),
+        'v2e_noise_rate_cov_decades': float(getattr(args, 'v2e_noise_rate_cov_decades', 0.0)),
+        'v2e_fg_gamma': float(getattr(args, 'v2e_fg_gamma', 2.0)),
+        'v2e_bg_gamma': float(getattr(args, 'v2e_bg_gamma', 0.6)),
+        'v2e_fg_brightness': float(getattr(args, 'v2e_fg_brightness', 1.0)),
+        'v2e_bg_brightness': float(getattr(args, 'v2e_bg_brightness', 1.0)),
         'v2e_temporal_filter_percent': getattr(args, 'v2e_temporal_filter_percent', None),
         # Intensity-based event generation parameters
-        'intensity_pos_threshold': getattr(args, 'intensity_pos_threshold', 0.05),
-        'intensity_neg_threshold': getattr(args, 'intensity_neg_threshold', 0.05),
-        'intensity_shot_noise_rate_hz': getattr(args, 'intensity_shot_noise_rate_hz', 0.0),
+        'intensity_pos_threshold': float(getattr(args, 'intensity_pos_threshold', 0.05)),
+        'intensity_neg_threshold': float(getattr(args, 'intensity_neg_threshold', 0.05)),
+        'intensity_shot_noise_rate_hz': float(getattr(args, 'intensity_shot_noise_rate_hz', 0.0)),
         # Feature computation parameters
-        'tau': args.tau,
+        'tau': float(args.tau),
         'filter_size': args.filter_size,
     }
     
@@ -246,6 +246,7 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
     config_dict = build_dataset_config(args, for_hash_only=True)
 
     dataset_hash = generate_dataset_hash(**config_dict)
+    config_dict['dataset_hash'] = dataset_hash
     dataset_path = os.path.join(cache_dir, f"{dataset_hash}_data.pt")
 
     # Print dataset configuration
