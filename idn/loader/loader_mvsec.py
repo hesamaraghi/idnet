@@ -36,20 +36,23 @@ class MVSEC(Dataset):
         self.in_memory = config.get("in_memory", False)
         self.force_preprocess = config.get("force_preprocess", False)
         self.do_not_save_preprocessed = config.get("do_not_save_preprocessed", False)
+        self.force_preprocessed_indices = set()
         self.seq_path = config.common.get("data_root", "data/MVSEC")
+        self.preprocessed_root = config.common.get("preprocessed_root", self.seq_path) or self.seq_path
         if training:
             self.seq_name = config.train.seq
         else:
             self.seq_name = config.val.seq
         self.num_bins = config.get("num_voxel_bins", None)
+        if self.num_bins is None or self.num_bins <= 0:
+            raise ValueError(f"num_voxel_bins must be a positive integer, got {self.num_bins}")
 
         assert Path(self.seq_path).is_dir(), f"{self.seq_path} is not a directory"
         
-        self.preprocessed_path = Path(self.seq_path) / Path(self.seq_name) / 'preprocessed'
+        self.preprocessed_path = Path(self.preprocessed_root) / Path(self.seq_name) / 'preprocessed'
         if not self.preprocessed_path.exists():  
             self.preprocessed_path.mkdir(parents=True, exist_ok=True)
         
-        self.num_bins = config.get("num_voxel_bins", None)
         self.dt = config.get("dt", None)
         if self.dt is None:
             self.event_h5 = h5py.File(os.path.join(self.seq_path, f"{self.seq_name}_data.hdf5"), "r")
@@ -112,6 +115,38 @@ class MVSEC(Dataset):
     def __len__(self):
         return self.raw_gt_len - 2
 
+    def _validate_tensor_channels(self, sample, key, expected_channels, path):
+        if key not in sample:
+            raise KeyError(f"Missing required key '{key}' in preprocessed sample {path}")
+        value = sample[key]
+        if not torch.is_tensor(value):
+            raise TypeError(f"Expected '{key}' in {path} to be a tensor, got {type(value)}")
+        if value.ndim < 3:
+            raise ValueError(f"Expected '{key}' in {path} to have at least 3 dims, got shape {tuple(value.shape)}")
+        if value.shape[0] != expected_channels:
+            raise ValueError(
+                f"Expected '{key}' in {path} to have {expected_channels} channels "
+                f"for num_voxel_bins={self.num_bins}, got shape {tuple(value.shape)}"
+            )
+
+    def _validate_preprocessed_sample(self, sample, path):
+        self._validate_tensor_channels(sample, "event_volume_new", self.num_bins, path)
+        if self.add_eigenvalues:
+            self._validate_tensor_channels(sample, "eigenvalues_volume_new", 2 * self.num_bins, path)
+        if self.add_filter_values:
+            self._validate_tensor_channels(sample, "filter_values_volume_new", self.num_bins, path)
+        flow_key = "flow_gt_event_volume_new"
+        if flow_key not in sample:
+            raise KeyError(f"Missing required key '{flow_key}' in preprocessed sample {path}")
+        flow_value = sample[flow_key]
+        if not isinstance(flow_value, (tuple, list)) or len(flow_value) != 2:
+            raise TypeError(f"Expected '{flow_key}' in {path} to be a flow/mask pair")
+        flow, mask = flow_value
+        if not torch.is_tensor(flow) or flow.ndim != 3 or flow.shape[0] != 2:
+            raise ValueError(f"Expected '{flow_key}' in {path} to contain a [2,H,W] flow tensor")
+        if not torch.is_tensor(mask) or mask.ndim != 3 or mask.shape[0] != 1:
+            raise ValueError(f"Expected '{flow_key}' in {path} to contain a [1,H,W] valid mask")
+
     @cached_property
     def event_ts_to_idx(self):
         return self.build_event_idx()
@@ -132,12 +167,30 @@ class MVSEC(Dataset):
         self.harris_recursive(events)
 
     def get_data_sample(self, idx):
+        sample_idx = idx
         preprocessed_file_path = self.preprocessed_path / f"{idx:05d}.pt"
-        if not self.force_preprocess and preprocessed_file_path.exists():
+
+        should_load_from_disk = False
+        if self.force_preprocess and self.do_not_save_preprocessed:
+            should_load_from_disk = False
+        elif self.force_preprocess and not self.do_not_save_preprocessed:
+            should_load_from_disk = (
+                sample_idx in self.force_preprocessed_indices
+                and preprocessed_file_path.exists()
+            )
+        elif preprocessed_file_path.exists():
+            should_load_from_disk = True
+
+        if should_load_from_disk:
             # print(f"Loading preprocessed data for index {index} for sequence {self.seq_name} from {preprocessed_file_path}")
             loaded_file = torch.load(preprocessed_file_path, weights_only=False)       
+            if not self.add_eigenvalues:
+                loaded_file.pop("eigenvalues_volume_new", None)
+            if not self.add_filter_values:
+                loaded_file.pop("filter_values_volume_new", None)
             if not self.add_eigenvalues and not self.add_filter_values:
                 loaded_file['event_volume_new'] = loaded_file['event_volume_new'][:self.num_bins,:,:]
+            self._validate_preprocessed_sample(loaded_file, preprocessed_file_path)
             return loaded_file
             
         idx += 1
@@ -330,8 +383,11 @@ class MVSEC(Dataset):
             }
 
         if self.do_not_save_preprocessed:
+            self._validate_preprocessed_sample(cleaned_output, preprocessed_file_path)
             return cleaned_output
+        self._validate_preprocessed_sample(cleaned_output, preprocessed_file_path)
         torch.save(cleaned_output, preprocessed_file_path)
+        self.force_preprocessed_indices.add(sample_idx)
         print(f"Saved preprocessed data for index {idx - 1} for sequence {self.seq_name} at {preprocessed_file_path}")
         return cleaned_output
 
@@ -409,4 +465,3 @@ class MVSECRecurrent(MVSEC):
             sequence[0]['new_sequence'] = 0
 
         return sequence
-

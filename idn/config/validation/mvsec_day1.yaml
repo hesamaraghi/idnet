@@ -35,6 +35,7 @@ dataset:
   common:
     data_root: ${oc.select:dataset.common.data_root}
     test_root: ${oc.select:dataset.common.test_root}
+    preprocessed_root: ${oc.select:dataset.common.preprocessed_root}
   train:
     seq: ${oc.select:dataset.train.seq}
   val:

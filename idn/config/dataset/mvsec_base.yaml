@@ -4,7 +4,7 @@
 
 dataset_name: mvsec
 representation_type: null
-num_voxel_bins: 5
+num_voxel_bins: 15
 dt: null
 add_eigenvalues: false
 add_filter_values: false
@@ -16,6 +16,7 @@ do_not_save_preprocessed: false
 common:
   data_root: data/MVSEC
   test_root: data/MVSEC
+  preprocessed_root: ${oc.env:MVSEC_PREPROCESSED_ROOT,data/MVSEC}
 train:
   seq: "outdoor_day2"
 val:
