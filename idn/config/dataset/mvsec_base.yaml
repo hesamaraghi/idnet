@@ -19,5 +19,14 @@ common:
   preprocessed_root: ${oc.env:MVSEC_PREPROCESSED_ROOT,data/MVSEC}
 train:
   seq: "outdoor_day2"
+  subset:
+    enabled: false
+    mode: uniform
+    fraction: 0.1
+    count: null
+    seed: 0
+    start: 0
+    end: null
+    stride: 1
 val:
   seq: "outdoor_day1"

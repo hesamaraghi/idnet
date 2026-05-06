@@ -2,7 +2,7 @@ import os
 import json
 import wandb
 import torch
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader, ConcatDataset, Subset
 from tqdm import tqdm
 from types import GeneratorType
 from collections import namedtuple
@@ -215,6 +215,7 @@ class Trainer(CallbackBridge):
 
         elif self.config.dataset.dataset_name == "mvsec":
             train_set = MVSEC(config=self.config.dataset, training=True) #20Hz
+            train_set = self.configure_mvsec_subset(train_set)
         elif self.config.dataset.dataset_name == "mvsec_recurrent":
             train_set = MVSECRecurrent("outdoor_day2", augment=False, 
                                        sequence_length=self.config.dataset.train.sequence_length)
@@ -225,6 +226,63 @@ class Trainer(CallbackBridge):
             and self.config.dataset.train.recurrent else train_collate
         return DataLoader(
             train_set, collate_fn=collate_fn, **self.config.data_loader.train.args)
+
+    def configure_mvsec_subset(self, train_set):
+        subset_cfg = self.config.dataset.train.get("subset", None)
+        if subset_cfg is None or not subset_cfg.get("enabled", False):
+            return train_set
+
+        n = len(train_set)
+        if n <= 0:
+            raise ValueError("Cannot subset an empty MVSEC training dataset")
+
+        mode = subset_cfg.get("mode", "uniform")
+        if mode == "range":
+            start = int(subset_cfg.get("start", 0))
+            end_value = subset_cfg.get("end", None)
+            end = n if end_value is None else int(end_value)
+            stride = int(subset_cfg.get("stride", 1))
+            if stride <= 0:
+                raise ValueError(f"MVSEC subset stride must be positive, got {stride}")
+            start = max(start, 0)
+            end = min(end, n)
+            indices = list(range(start, end, stride))
+        else:
+            count = subset_cfg.get("count", None)
+            fraction = subset_cfg.get("fraction", None)
+            if count is None:
+                if fraction is None:
+                    raise ValueError("MVSEC subset needs either count or fraction")
+                fraction = float(fraction)
+                if fraction <= 0:
+                    raise ValueError(f"MVSEC subset fraction must be positive, got {fraction}")
+                count = round(n * fraction)
+            count = int(count)
+            if count <= 0:
+                raise ValueError(f"MVSEC subset count must be positive, got {count}")
+            count = min(count, n)
+
+            if mode == "uniform":
+                if count == n:
+                    indices = list(range(n))
+                else:
+                    indices = torch.linspace(0, n - 1, steps=count).round().long().unique().tolist()
+            elif mode == "random":
+                seed = int(subset_cfg.get("seed", 0))
+                generator = torch.Generator().manual_seed(seed)
+                indices = torch.randperm(n, generator=generator)[:count].sort().values.tolist()
+            else:
+                raise ValueError(f"Unknown MVSEC subset mode: {mode}")
+
+        if not indices:
+            raise ValueError("MVSEC subset produced no indices")
+
+        print(
+            f"Using MVSEC training subset: mode={mode}, "
+            f"samples={len(indices)}/{n}, first={indices[0]}, last={indices[-1]}",
+            flush=True,
+        )
+        return Subset(train_set, indices)
 
     def configure_optimizer(self):
         if self.config.optim.optimizer == "adam":
@@ -340,4 +398,3 @@ class Trainer(CallbackBridge):
             raise Exception("Training failed")
         finally:
             self.execute_callbacks("on_train_end")
-
