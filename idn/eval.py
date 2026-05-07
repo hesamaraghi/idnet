@@ -33,6 +33,10 @@ def main(config):
     print("Number of parameters: ", sum(p.numel()
           for p in trainer.model.parameters() if p.requires_grad))
 
+    if config.get("validation", None):
+        results = Validator(config.validation)(trainer.model)
+        print(OmegaConf.to_yaml(OmegaConf.create(results)))
+        return
 
     if config.model.name == "RecIDE":
         test_co(trainer)

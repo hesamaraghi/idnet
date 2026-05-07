@@ -1,0 +1,29 @@
+dataset_name: evimov2
+representation_type: voxel
+num_voxel_bins: 15
+split: eval
+image_height: 480
+image_width: 640
+add_eigenvalues: false
+add_filter_values: false
+tau: 5000
+filter_size: 5
+in_memory: false
+force_preprocess: false
+do_not_save_preprocessed: true
+normalize_voxel: true
+skip_invalid: true
+
+common:
+  data_root: data/EVIMOv2/samsung_mono/Check it also forimo
+  test_root: data/EVIMOv2/samsung_mono/imo/eval
+  preprocessed_root: ${oc.env:EVIMOV2_PREPROCESSED_ROOT,data/EVIMOv2/preprocessed}
+
+train:
+  split: train
+  seq: []
+
+val:
+  split: eval
+  seq: []
+  concat_seq: false

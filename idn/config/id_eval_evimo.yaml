@@ -1,0 +1,28 @@
+eval_only: true
+callbacks:
+
+data_loader:
+  common:
+    num_voxel_bins: ${dataset.num_voxel_bins}
+  train:
+    gpu: 0
+    args:
+      batch_size: 1
+      pin_memory: false
+  val:
+    gpu: 0
+    batch_freq: 1500
+
+model:
+  add_eigenvalues: ${dataset.add_eigenvalues}
+  add_filter_values: ${dataset.add_filter_values}
+  num_voxel_bins: ${dataset.num_voxel_bins}
+
+defaults:
+  - hydra: custom_hydra
+  - data_loader_base
+  - model: id-8x
+  - dataset: evimov2
+  - validation@_group_.evimov2: evimov2
+  - torch_environ_base
+  - _self_

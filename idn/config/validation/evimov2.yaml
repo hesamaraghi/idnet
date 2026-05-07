@@ -1,0 +1,56 @@
+defaults:
+  - /validation/data_loader_val_base@_here_
+  - /logger_base@_here_
+  - _self_
+
+name: ${dataset.dataset_name}_${dataset.val.split}
+val_batch_freq: 1500
+data_loader:
+  gpu: 0
+  args:
+    batch_size: 1
+    pin_memory: false
+    shuffle: false
+    num_workers: 0
+    prefetch_factor: null
+
+logger:
+  saved_tensors:
+    final_prediction:
+    flow_gt_event_volume_new:
+
+dataset:
+  dataset_name: ${oc.select:dataset.dataset_name}
+  representation_type: ${oc.select:dataset.representation_type}
+  num_voxel_bins: ${oc.select:dataset.num_voxel_bins}
+  split: ${oc.select:dataset.split}
+  image_height: ${oc.select:dataset.image_height}
+  image_width: ${oc.select:dataset.image_width}
+  add_eigenvalues: ${oc.select:dataset.add_eigenvalues}
+  add_filter_values: ${oc.select:dataset.add_filter_values}
+  tau: ${oc.select:dataset.tau}
+  filter_size: ${oc.select:dataset.filter_size}
+  in_memory: ${oc.select:dataset.in_memory}
+  force_preprocess: ${oc.select:dataset.force_preprocess}
+  do_not_save_preprocessed: ${oc.select:dataset.do_not_save_preprocessed}
+  normalize_voxel: ${oc.select:dataset.normalize_voxel}
+  skip_invalid: ${oc.select:dataset.skip_invalid}
+  common:
+    data_root: ${oc.select:dataset.common.data_root}
+    test_root: ${oc.select:dataset.common.test_root}
+    preprocessed_root: ${oc.select:dataset.common.preprocessed_root}
+  train:
+    split: ${oc.select:dataset.train.split}
+    seq: ${oc.select:dataset.train.seq}
+  val:
+    split: ${oc.select:dataset.val.split}
+    seq: ${oc.select:dataset.val.seq}
+    concat_seq: ${oc.select:dataset.val.concat_seq}
+
+postprocess:
+
+metrics:
+  final_prediction_nonseq: ["L1", "L2", "1PE", "3PE"]
+
+hydra:
+  output_subdir: null
