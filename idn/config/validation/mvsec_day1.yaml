@@ -27,6 +27,7 @@ dataset:
   dt: ${oc.select:dataset.dt}
   add_eigenvalues: ${oc.select:dataset.add_eigenvalues}
   add_filter_values: ${oc.select:dataset.add_filter_values}
+  normalize_aux_voxel: ${oc.select:dataset.normalize_aux_voxel,true}
   tau: ${oc.select:dataset.tau}
   filter_size: ${oc.select:dataset.filter_size}
   in_memory: ${oc.select:dataset.in_memory}

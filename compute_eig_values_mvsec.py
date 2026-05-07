@@ -8,12 +8,15 @@ import argparse
 from idn.loader.loader_mvsec import MVSEC
 
 
-def configure_mvsec_dataset(cfg, data_root, test_set_root, num_voxel_bins=None):
+def configure_mvsec_dataset(
+    cfg, data_root, test_set_root, num_voxel_bins=None, normalize_aux_voxel=True
+):
     cfg.dataset.force_preprocess = True
     cfg.dataset.in_memory = False
     cfg.dataset.do_not_save_preprocessed = False
     cfg.dataset.add_eigenvalues = True
     cfg.dataset.add_filter_values = True
+    cfg.dataset.normalize_aux_voxel = normalize_aux_voxel
     cfg.dataset.common.data_root = data_root
     cfg.dataset.common.test_root = test_set_root
     if num_voxel_bins is not None:
@@ -53,6 +56,12 @@ parser.add_argument("--data_root", type=str, default="data/MVSEC", help="Root di
 parser.add_argument("--test", action="store_true", help="Run in test mode with a small dataset")
 parser.add_argument("--test_set_root", type=str, default="data/MVSEC", help="Root directory for test set")
 parser.add_argument("--num_voxel_bins", type=int, default=None, help="Override dataset.num_voxel_bins")
+parser.add_argument(
+    "--normalize_aux_voxel",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Normalize MVSEC eig/filter voxel tensors. Use --no-normalize_aux_voxel to disable.",
+)
 args = parser.parse_args()
 
 # Conditional requirement check
@@ -73,6 +82,7 @@ configure_mvsec_dataset(
     data_root=args.data_root,
     test_set_root=args.test_set_root,
     num_voxel_bins=args.num_voxel_bins,
+    normalize_aux_voxel=args.normalize_aux_voxel,
 )
 
 print(OmegaConf.to_yaml(cfg))
@@ -86,6 +96,7 @@ if args.test:
         )
     cfg.validation.mvsec.dataset.common.data_root = args.test_set_root
     cfg.validation.mvsec.dataset.common.test_root = args.test_set_root
+    cfg.validation.mvsec.dataset.normalize_aux_voxel = args.normalize_aux_voxel
     dataset = MVSEC(
         config=cfg.validation.mvsec.dataset,
         training=False,
@@ -103,6 +114,7 @@ datasets_len = len(dataset)
 
 print(f"The length of dataset: {datasets_len}")
 print(f"Using num_voxel_bins: {cfg.dataset.num_voxel_bins}")
+print(f"normalize_aux_voxel: {cfg.dataset.normalize_aux_voxel}")
 print(f"Overwrite enabled: force_preprocess={cfg.dataset.force_preprocess}, do_not_save_preprocessed={cfg.dataset.do_not_save_preprocessed}")
 print(f"Preprocessed output path: {dataset.preprocessed_path}")
 

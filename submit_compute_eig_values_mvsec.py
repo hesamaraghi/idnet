@@ -8,12 +8,16 @@ import shlex
 
 from idn.loader.loader_mvsec import MVSEC
 
-def configure_mvsec_dataset(cfg, data_root, test_set_root, num_voxel_bins=None):
+
+def configure_mvsec_dataset(
+    cfg, data_root, test_set_root, num_voxel_bins=None, normalize_aux_voxel=True
+):
     cfg.dataset.force_preprocess = True
     cfg.dataset.in_memory = False
     cfg.dataset.do_not_save_preprocessed = False
     cfg.dataset.add_eigenvalues = True
     cfg.dataset.add_filter_values = True
+    cfg.dataset.normalize_aux_voxel = normalize_aux_voxel
     cfg.dataset.common.data_root = data_root
     cfg.dataset.common.test_root = test_set_root
     if num_voxel_bins is not None:
@@ -29,6 +33,7 @@ def submit_jobs(
     test,
     test_set_root,
     num_voxel_bins=None,
+    normalize_aux_voxel=True,
     dry_run=False,
     submit_once=False,
 ):
@@ -54,6 +59,7 @@ def submit_jobs(
         data_root=data_root,
         test_set_root=test_set_root,
         num_voxel_bins=num_voxel_bins,
+        normalize_aux_voxel=normalize_aux_voxel,
     )
 
     print(OmegaConf.to_yaml(cfg))
@@ -66,6 +72,7 @@ def submit_jobs(
             )
         cfg.validation.mvsec.dataset.common.data_root = test_set_root
         cfg.validation.mvsec.dataset.common.test_root = test_set_root
+        cfg.validation.mvsec.dataset.normalize_aux_voxel = normalize_aux_voxel
         dataset = MVSEC(
             config=cfg.validation.mvsec.dataset,
             training=False,
@@ -102,6 +109,11 @@ def submit_jobs(
         ]
         if num_voxel_bins is not None:
             worker_command.extend(["--num_voxel_bins", str(num_voxel_bins)])
+        worker_command.append(
+            "--normalize_aux_voxel"
+            if normalize_aux_voxel
+            else "--no-normalize_aux_voxel"
+        )
         if test:
             worker_command.extend(["--test", "--test_set_root", test_set_root])
 
@@ -160,6 +172,12 @@ if __name__ == "__main__":
         help="Override dataset.num_voxel_bins and pass the same override to worker jobs",
     )
     parser.add_argument(
+        "--normalize_aux_voxel",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Normalize MVSEC eig/filter voxel tensors. Use --no-normalize_aux_voxel to disable.",
+    )
+    parser.add_argument(
         "--dry_run",
         action="store_true",
         help="Print the sbatch commands without submitting them.",
@@ -186,6 +204,7 @@ if __name__ == "__main__":
         test=args.test,
         test_set_root=args.test_set_root,
         num_voxel_bins=args.num_voxel_bins,
+        normalize_aux_voxel=args.normalize_aux_voxel,
         dry_run=args.dry_run,
         submit_once=args.submit_once,
     )

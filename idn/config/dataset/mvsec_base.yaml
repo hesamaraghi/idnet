@@ -8,6 +8,7 @@ num_voxel_bins: 15
 dt: null
 add_eigenvalues: false
 add_filter_values: false
+normalize_aux_voxel: true
 tau: 1000 
 filter_size: 5
 in_memory: false

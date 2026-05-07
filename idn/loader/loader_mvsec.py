@@ -36,6 +36,7 @@ class MVSEC(Dataset):
         self.in_memory = config.get("in_memory", False)
         self.force_preprocess = config.get("force_preprocess", False)
         self.do_not_save_preprocessed = config.get("do_not_save_preprocessed", False)
+        self.normalize_aux_voxel = config.get("normalize_aux_voxel", True)
         self.force_preprocessed_indices = set()
         self.seq_path = config.common.get("data_root", "data/MVSEC")
         self.preprocessed_root = config.common.get("preprocessed_root", self.seq_path) or self.seq_path
@@ -86,9 +87,9 @@ class MVSEC(Dataset):
             normalize=True,
             gpu=False,
         )
-        self.voxel_not_normalized = EventSequenceToVoxelGrid_Pytorch(
+        self.voxel_aux = EventSequenceToVoxelGrid_Pytorch(
             num_bins=self.num_bins,
-            normalize=False,
+            normalize=self.normalize_aux_voxel,
             gpu=False,
         )
         self.image_width, self.image_height = 346, 260
@@ -233,7 +234,7 @@ class MVSEC(Dataset):
                           f"Eigenvalue 1: min. {eig1.min()}, max. {eig1.max()}\n"
                           f"Eigenvalue 2: min. {eig2.min()}, max. {eig2.max()}", flush=True)
                     eig1_representation = \
-                        self.voxel_not_normalized(EventSequence(None,
+                        self.voxel_aux(EventSequence(None,
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
@@ -242,7 +243,7 @@ class MVSEC(Dataset):
                             val_type='eig1')
             
                     eig2_representation = \
-                        self.voxel_not_normalized(EventSequence(None,
+                        self.voxel_aux(EventSequence(None,
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
@@ -265,7 +266,7 @@ class MVSEC(Dataset):
                     print(f"Filter values computed for index {idx - 1} and sequence {self.seq_name}\n"
                           f"Filter values: min. {filter_values.min()}, max. {filter_values.max()}", flush=True)
                     sample["filter_values_volume_new"] = \
-                        self.voxel_not_normalized(EventSequence(None,
+                        self.voxel_aux(EventSequence(None,
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
@@ -322,7 +323,7 @@ class MVSEC(Dataset):
                     print(f"Eigenvalue 1: min. {eig1.min()}, max. {eig1.max()}")
                     print(f"Eigenvalue 2: min. {eig2.min()}, max. {eig2.max()}")
                     eig1_representation = \
-                        self.voxel_not_normalized(EventSequence(None,
+                        self.voxel_aux(EventSequence(None,
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
@@ -330,7 +331,7 @@ class MVSEC(Dataset):
                                     features=np.column_stack((t, x, y, eig1)).copy()),
                             val_type='eig1')
                     eig2_representation = \
-                        self.voxel_not_normalized(EventSequence(None,
+                        self.voxel_aux(EventSequence(None,
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,
@@ -353,7 +354,7 @@ class MVSEC(Dataset):
                     print(f"Filter values computed for index {idx - 1} and sequence {self.seq_name}")
                     print(f"Filter values: min. {filter_values.min()}, max. {filter_values.max()}")
                     sample["filter_values_volume_new"] = \
-                        self.voxel_not_normalized(EventSequence(None,
+                        self.voxel_aux(EventSequence(None,
                                     params={'width': self.image_width, 
                                             'height': self.image_height},
                                     timestamp_multiplier=1e6,

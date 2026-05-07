@@ -24,6 +24,7 @@ loss:
 dataset:
   dataset_name: mvsec
   num_voxel_bins: 15
+  normalize_aux_voxel: true
   train:
 
 
