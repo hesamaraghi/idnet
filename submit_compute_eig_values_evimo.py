@@ -160,7 +160,7 @@ def submit_jobs(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Submit EVIMOv2 eig/filter jobs using SLURM.")
+    parser = argparse.ArgumentParser(description="Submit EVIMO2v2 eig/filter jobs using SLURM.")
     parser.add_argument(
         "--chunk_size",
         "--chunk-size",
@@ -197,8 +197,8 @@ if __name__ == "__main__":
         "--data-root",
         dest="data_root",
         type=str,
-        default="data/EVIMOv2/samsung_mono/imo",
-        help="EVIMOv2 root containing train/ and eval/ splits",
+        default="data/EVIMO2v2/samsung_mono/imo",
+        help="EVIMO2v2 root containing train/ and eval/ splits",
     )
     parser.add_argument("--split", type=str, default="eval", choices=("train", "eval"))
     parser.add_argument("--seq", nargs="*", default=None, help="Optional sequence names")
@@ -229,7 +229,7 @@ if __name__ == "__main__":
         dest="normalize_aux_voxel",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Normalize EVIMOv2 eig/filter voxel tensors. Use --no-normalize_aux_voxel to disable.",
+        help="Normalize EVIMO2v2 eig/filter voxel tensors. Use --no-normalize_aux_voxel to disable.",
     )
     parser.add_argument(
         "--visualize_every",

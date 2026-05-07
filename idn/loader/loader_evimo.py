@@ -9,7 +9,7 @@ from idn.utils.mvsec_utils import EventSequence
 from idn.utils.transformers import EventSequenceToVoxelGrid_Pytorch
 
 
-class EVIMOv2Sequence(Dataset):
+class EVIMO2v2Sequence(Dataset):
     def __init__(self, seq_path, config, split="eval", num_bins=None):
         self.seq_path = Path(seq_path)
         self.config = config
@@ -103,7 +103,7 @@ class EVIMOv2Sequence(Dataset):
                 }
             )
         if not samples:
-            raise ValueError(f"{self.seq_name}: no valid EVIMOv2 flow samples found")
+            raise ValueError(f"{self.seq_name}: no valid EVIMO2v2 flow samples found")
         return samples
 
     def _has_valid_flow(self, flow_key, mask_key):
@@ -241,7 +241,7 @@ def assemble_evimo_sequences(dataset_root, split="eval", include_seq=None, confi
     dataset_root = Path(dataset_root)
     split_root = dataset_root / split
     if not split_root.exists():
-        raise FileNotFoundError(f"EVIMOv2 split directory does not exist: {split_root}")
+        raise FileNotFoundError(f"EVIMO2v2 split directory does not exist: {split_root}")
 
     available_seqs = sorted(
         path.name for path in split_root.iterdir() if path.is_dir()
@@ -252,12 +252,12 @@ def assemble_evimo_sequences(dataset_root, split="eval", include_seq=None, confi
     else:
         seqs = available_seqs
     if not seqs:
-        raise ValueError(f"No EVIMOv2 sequences selected from {split_root}")
+        raise ValueError(f"No EVIMO2v2 sequences selected from {split_root}")
 
     return [
-        EVIMOv2Sequence(split_root / seq, config=config, split=split, num_bins=num_bins)
+        EVIMO2v2Sequence(split_root / seq, config=config, split=split, num_bins=num_bins)
         for seq in seqs
     ]
 
 
-__all__ = ["EVIMOv2Sequence", "assemble_evimo_sequences"]
+__all__ = ["EVIMO2v2Sequence", "assemble_evimo_sequences"]

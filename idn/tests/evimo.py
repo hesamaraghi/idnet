@@ -5,7 +5,7 @@ from ..loader.loader_dsec import train_collate
 from ..loader.loader_evimo import assemble_evimo_sequences
 
 
-class TestEVIMOV2(Test):
+class TestEVIMO2V2(Test):
     def configure_dataloader(self):
         split = self.spec.dataset.val.get(
             "split", self.spec.dataset.get("split", "eval")

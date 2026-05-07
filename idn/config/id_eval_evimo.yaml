@@ -22,7 +22,7 @@ defaults:
   - hydra: custom_hydra
   - data_loader_base
   - model: id-8x
-  - dataset: evimov2
-  - validation@_group_.evimov2: evimov2
+  - dataset: evimo2v2
+  - validation@_group_.evimo2v2: evimo2v2
   - torch_environ_base
   - _self_

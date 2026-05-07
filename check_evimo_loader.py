@@ -18,11 +18,11 @@ def tensor_summary(name, value):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Smoke test the EVIMOv2 loader.")
+    parser = argparse.ArgumentParser(description="Smoke test the EVIMO2v2 loader.")
     parser.add_argument(
         "--data-root",
-        default="data/EVIMOv2/samsung_mono/imo",
-        help="EVIMOv2 root containing train/ and eval/ splits.",
+        default="data/EVIMO2v2/samsung_mono/imo",
+        help="EVIMO2v2 root containing train/ and eval/ splits.",
     )
     parser.add_argument("--split", default="eval")
     parser.add_argument("--seq", default=None)
@@ -36,7 +36,7 @@ def main():
 
     config = OmegaConf.create(
         {
-            "dataset_name": "evimov2",
+            "dataset_name": "evimo2v2",
             "num_voxel_bins": args.num_voxel_bins,
             "image_height": 480,
             "image_width": 640,

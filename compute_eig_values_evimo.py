@@ -96,7 +96,7 @@ def save_visualizations(sample, output_root, split, num_voxel_bins, global_idx):
         file_path = event_voxel_path / f"event_voxel_{global_idx}_{file_idx}_{channel}.png"
         fig, ax = plt.subplots(1, 1, figsize=(10, 7))
         im = ax.imshow(sample["event_volume_new"][channel, :, :], cmap="binary")
-        ax.set_title(f"EVIMOv2 event voxel channel {channel}")
+        ax.set_title(f"EVIMO2v2 event voxel channel {channel}")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
         plt.savefig(file_path)
@@ -105,7 +105,7 @@ def save_visualizations(sample, output_root, split, num_voxel_bins, global_idx):
         file_path = eig_1_path / f"eig_1_{global_idx}_{file_idx}_{channel}.png"
         fig, ax = plt.subplots(1, 1, figsize=(10, 7))
         im = ax.imshow(sample["eigenvalues_volume_new"][channel, :, :], cmap="binary")
-        ax.set_title(f"EVIMOv2 eig value 1 channel {channel}")
+        ax.set_title(f"EVIMO2v2 eig value 1 channel {channel}")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
         plt.savefig(file_path)
@@ -117,7 +117,7 @@ def save_visualizations(sample, output_root, split, num_voxel_bins, global_idx):
             sample["eigenvalues_volume_new"][channel + num_voxel_bins, :, :],
             cmap="binary",
         )
-        ax.set_title(f"EVIMOv2 eig value 2 channel {channel}")
+        ax.set_title(f"EVIMO2v2 eig value 2 channel {channel}")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
         plt.savefig(file_path)
@@ -126,7 +126,7 @@ def save_visualizations(sample, output_root, split, num_voxel_bins, global_idx):
         file_path = filter_value_path / f"filter_values_{global_idx}_{file_idx}_{channel}.png"
         fig, ax = plt.subplots(1, 1, figsize=(10, 7))
         im = ax.imshow(sample["filter_values_volume_new"][channel, :, :], cmap="binary")
-        ax.set_title(f"EVIMOv2 filter values channel {channel}")
+        ax.set_title(f"EVIMO2v2 filter values channel {channel}")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
         plt.savefig(file_path)
@@ -142,7 +142,7 @@ def parse_sequences(values):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Precompute EVIMOv2 eig/filter values.")
+    parser = argparse.ArgumentParser(description="Precompute EVIMO2v2 eig/filter values.")
     parser.add_argument(
         "--start_idx",
         "--start-idx",
@@ -171,8 +171,8 @@ def main():
         "--data-root",
         dest="data_root",
         type=str,
-        default="data/EVIMOv2/samsung_mono/imo",
-        help="EVIMOv2 root containing train/ and eval/ splits",
+        default="data/EVIMO2v2/samsung_mono/imo",
+        help="EVIMO2v2 root containing train/ and eval/ splits",
     )
     parser.add_argument("--split", type=str, default="eval", choices=("train", "eval"))
     parser.add_argument("--seq", nargs="*", default=None, help="Optional sequence names")
@@ -203,7 +203,7 @@ def main():
         dest="normalize_aux_voxel",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Normalize EVIMOv2 eig/filter voxel tensors. Use --no-normalize_aux_voxel to disable.",
+        help="Normalize EVIMO2v2 eig/filter voxel tensors. Use --no-normalize_aux_voxel to disable.",
     )
     parser.add_argument(
         "--visualize_every",
@@ -290,7 +290,7 @@ def main():
             )
         except Exception as exc:
             print(f"Error processing index {global_idx}: {exc}")
-            raise RuntimeError(f"EVIMOv2 preprocessing failed for index {global_idx}") from exc
+            raise RuntimeError(f"EVIMO2v2 preprocessing failed for index {global_idx}") from exc
 
 
 if __name__ == "__main__":

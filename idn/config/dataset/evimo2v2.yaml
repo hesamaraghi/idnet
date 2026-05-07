@@ -1,4 +1,4 @@
-dataset_name: evimov2
+dataset_name: evimo2v2
 representation_type: voxel
 num_voxel_bins: 15
 split: eval
@@ -16,9 +16,9 @@ normalize_aux_voxel: true
 skip_invalid: true
 
 common:
-  data_root: data/EVIMOv2/samsung_mono/Check it also forimo
-  test_root: data/EVIMOv2/samsung_mono/imo/eval
-  preprocessed_root: ${oc.env:EVIMOV2_PREPROCESSED_ROOT,data/EVIMOv2/preprocessed}
+  data_root: data/EVIMO2v2/samsung_mono/Check it also forimo
+  test_root: data/EVIMO2v2/samsung_mono/imo/eval
+  preprocessed_root: ${oc.env:EVIMO2V2_PREPROCESSED_ROOT,data/EVIMO2v2/preprocessed}
 
 train:
   split: train

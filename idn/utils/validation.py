@@ -35,8 +35,8 @@ class Validator:
         from ..tests import evimo as evimo_tests
         if test_name == "dsec":
             return dsec_tests.assemble_dsec_test_cls(test_type)
-        if test_name in ("evimo", "evimov2"):
-            return evimo_tests.TestEVIMOV2
+        if test_name in ("evimo", "evimo2v2"):
+            return evimo_tests.TestEVIMO2V2
         if test_name == "mvsec_outdoor_day1":
             return dsec_tests.TestMVSEC
         if test_name == "mvsec_outdoor_day1_rec":
