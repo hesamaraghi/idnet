@@ -45,16 +45,6 @@ def parse_sequences(values):
     return values
 
 
-def pixi_python_command():
-    return [
-        "pixi",
-        "run",
-        "--manifest-path",
-        "__ignore_blackwell_pixi/pixi.toml",
-        "python",
-    ]
-
-
 def submit_jobs(
     data_root,
     split,
@@ -114,7 +104,7 @@ def submit_jobs(
     for start_idx in range(0, dataset_size, chunk_size):
         end_idx = min(start_idx + chunk_size, dataset_size)
         worker_command = [
-            *pixi_python_command(),
+            "python",
             python_script,
             "--data_root",
             data_root,
