@@ -17,12 +17,14 @@ def configure_evimo_dataset(
     sequences,
     preprocessed_root=None,
     num_voxel_bins=None,
+    normalize_aux_voxel=True,
 ):
     cfg.dataset.force_preprocess = True
     cfg.dataset.in_memory = False
     cfg.dataset.do_not_save_preprocessed = False
     cfg.dataset.add_eigenvalues = True
     cfg.dataset.add_filter_values = True
+    cfg.dataset.normalize_aux_voxel = normalize_aux_voxel
     cfg.dataset.common.data_root = data_root
     cfg.dataset.common.test_root = str(Path(data_root) / split)
     cfg.dataset.split = split
@@ -141,22 +143,76 @@ def parse_sequences(values):
 
 def main():
     parser = argparse.ArgumentParser(description="Precompute EVIMOv2 eig/filter values.")
-    parser.add_argument("--start_idx", type=int, default=0, help="Start global dataset index")
-    parser.add_argument("--end_idx", type=int, default=1, help="Exclusive end global dataset index")
-    parser.add_argument("--config_name", type=str, default="id_eval_evimo")
+    parser.add_argument(
+        "--start_idx",
+        "--start-idx",
+        dest="start_idx",
+        type=int,
+        default=0,
+        help="Start global dataset index",
+    )
+    parser.add_argument(
+        "--end_idx",
+        "--end-idx",
+        dest="end_idx",
+        type=int,
+        default=1,
+        help="Exclusive end global dataset index",
+    )
+    parser.add_argument(
+        "--config_name",
+        "--config-name",
+        dest="config_name",
+        type=str,
+        default="id_eval_evimo",
+    )
     parser.add_argument(
         "--data_root",
+        "--data-root",
+        dest="data_root",
         type=str,
         default="data/EVIMOv2/samsung_mono/imo",
         help="EVIMOv2 root containing train/ and eval/ splits",
     )
     parser.add_argument("--split", type=str, default="eval", choices=("train", "eval"))
     parser.add_argument("--seq", nargs="*", default=None, help="Optional sequence names")
-    parser.add_argument("--preprocessed_root", type=str, default=None)
-    parser.add_argument("--visualization_root", type=str, default=None)
-    parser.add_argument("--num_voxel_bins", type=int, default=None)
-    parser.add_argument("--visualize_every", type=int, default=10)
-    parser.add_argument("--no_visualize", action="store_true")
+    parser.add_argument(
+        "--preprocessed_root",
+        "--preprocessed-root",
+        dest="preprocessed_root",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--visualization_root",
+        "--visualization-root",
+        dest="visualization_root",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--num_voxel_bins",
+        "--num-voxel-bins",
+        dest="num_voxel_bins",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--normalize_aux_voxel",
+        "--normalize-aux-voxel",
+        dest="normalize_aux_voxel",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Normalize EVIMOv2 eig/filter voxel tensors. Use --no-normalize_aux_voxel to disable.",
+    )
+    parser.add_argument(
+        "--visualize_every",
+        "--visualize-every",
+        dest="visualize_every",
+        type=int,
+        default=10,
+    )
+    parser.add_argument("--no_visualize", "--no-visualize", dest="no_visualize", action="store_true")
     args = parser.parse_args()
 
     config_dir = os.path.abspath("idn/config")
@@ -174,6 +230,7 @@ def main():
         sequences=sequences,
         preprocessed_root=args.preprocessed_root,
         num_voxel_bins=args.num_voxel_bins,
+        normalize_aux_voxel=args.normalize_aux_voxel,
     )
     print(OmegaConf.to_yaml(cfg))
 
@@ -189,6 +246,7 @@ def main():
 
     print(f"The length of dataset: {dataset_size}")
     print(f"Using num_voxel_bins: {cfg.dataset.num_voxel_bins}")
+    print(f"normalize_aux_voxel: {cfg.dataset.normalize_aux_voxel}")
     print(
         "Overwrite enabled: "
         f"force_preprocess={cfg.dataset.force_preprocess}, "

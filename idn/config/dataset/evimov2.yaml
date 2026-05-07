@@ -12,6 +12,7 @@ in_memory: false
 force_preprocess: false
 do_not_save_preprocessed: true
 normalize_voxel: true
+normalize_aux_voxel: true
 skip_invalid: true
 
 common:

@@ -34,6 +34,7 @@ dataset:
   force_preprocess: ${oc.select:dataset.force_preprocess}
   do_not_save_preprocessed: ${oc.select:dataset.do_not_save_preprocessed}
   normalize_voxel: ${oc.select:dataset.normalize_voxel}
+  normalize_aux_voxel: ${oc.select:dataset.normalize_aux_voxel,true}
   skip_invalid: ${oc.select:dataset.skip_invalid}
   common:
     data_root: ${oc.select:dataset.common.data_root}

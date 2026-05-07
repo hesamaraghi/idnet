@@ -23,6 +23,7 @@ class EVIMOv2Sequence(Dataset):
         self.force_preprocess = config.get("force_preprocess", False)
         self.do_not_save_preprocessed = config.get("do_not_save_preprocessed", True)
         self.normalize_voxel = config.get("normalize_voxel", True)
+        self.normalize_aux_voxel = config.get("normalize_aux_voxel", True)
         self.skip_invalid = config.get("skip_invalid", True)
 
         self.image_width = int(config.get("image_width", 640))
@@ -39,9 +40,9 @@ class EVIMOv2Sequence(Dataset):
             normalize=self.normalize_voxel,
             gpu=False,
         )
-        self.voxel_not_normalized = EventSequenceToVoxelGrid_Pytorch(
+        self.voxel_aux = EventSequenceToVoxelGrid_Pytorch(
             num_bins=self.num_bins,
-            normalize=False,
+            normalize=self.normalize_aux_voxel,
             gpu=False,
         )
 
@@ -215,7 +216,7 @@ class EVIMOv2Sequence(Dataset):
         event_array = np.column_stack(
             (events["t"], events["x"], events["y"], values)
         ).astype(np.float64, copy=False)
-        return self.voxel_not_normalized(
+        return self.voxel_aux(
             EventSequence(
                 None,
                 params={"width": self.image_width, "height": self.image_height},
