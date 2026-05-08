@@ -6,7 +6,7 @@ image_height: 480
 image_width: 640
 add_eigenvalues: false
 add_filter_values: false
-tau: 5000
+tau: 1000
 filter_size: 5
 in_memory: false
 force_preprocess: false
@@ -16,7 +16,7 @@ normalize_aux_voxel: true
 skip_invalid: true
 
 common:
-  data_root: data/EVIMO2v2/samsung_mono/Check it also forimo
+  data_root: data/EVIMO2v2/samsung_mono/imo
   test_root: data/EVIMO2v2/samsung_mono/imo/eval
   preprocessed_root: ${oc.env:EVIMO2V2_PREPROCESSED_ROOT,data/EVIMO2v2/preprocessed}
 
