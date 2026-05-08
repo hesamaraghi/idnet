@@ -31,6 +31,7 @@ from ..loader.loader_mvsec import (
     MVSEC,
     MVSECRecurrent
 )
+from ..loader.loader_evimo import assemble_evimo_sequences
 
 
 def load_toy_dataset_metadata(data_root: str, seq_name: str):
@@ -219,6 +220,16 @@ class Trainer(CallbackBridge):
         elif self.config.dataset.dataset_name == "mvsec_recurrent":
             train_set = MVSECRecurrent("outdoor_day2", augment=False, 
                                        sequence_length=self.config.dataset.train.sequence_length)
+        elif self.config.dataset.dataset_name == "evimo2v2":
+            split = self.config.dataset.train.get("split", "train")
+            train_sets = assemble_evimo_sequences(
+                self.config.dataset.common.data_root,
+                split=split,
+                include_seq=self.config.dataset.train.get("seq", None),
+                config=self.config.dataset,
+                num_bins=self.config.dataset.get("num_voxel_bins", None),
+            )
+            train_set = ConcatDataset(train_sets)
         else:
             raise NotImplementedError
         collate_fn = rec_train_collate \
@@ -368,6 +379,9 @@ class Trainer(CallbackBridge):
             if self.scheduler:
                 self.scheduler.step()
                 self.lr = self.scheduler.get_last_lr()[0]
+            if self.config.get("max_steps", None) is not None and self.step >= self.config.max_steps:
+                print(f"Reached max_steps={self.config.max_steps}; stopping epoch early.", flush=True)
+                break
         self.execute_callbacks("on_epoch_end")
         self.epoch += 1
 

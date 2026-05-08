@@ -1,65 +1,160 @@
 from pathlib import Path
+import random
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import torchvision.transforms.functional as TF
 
 from idn.loader.loader_dsec import HarrisRecursive
 from idn.utils.mvsec_utils import EventSequence
-from idn.utils.transformers import EventSequenceToVoxelGrid_Pytorch
+from idn.utils.transformers import (
+    EventSequenceToVoxelGrid_Pytorch,
+    apply_randomcrop_to_sample,
+    apply_transform_to_field,
+    downsample_spatial,
+    downsample_spatial_mask,
+)
+
+
+def _section_for_split(split):
+    if split == "train":
+        return "train"
+    if split in ("eval", "test", "val"):
+        return "val"
+    return split
+
+
+def _get_split_config(config, split):
+    section_name = _section_for_split(split)
+    return config.get(section_name, None) if config is not None else None
+
+
+def _get_split_value(config, split, key, default=None):
+    split_config = _get_split_config(config, split)
+    if split_config is not None and key in split_config:
+        value = split_config.get(key)
+        if value is not None:
+            return value
+    return config.get(key, default) if config is not None else default
+
+
+def _build_transforms(config, split):
+    transforms = dict()
+    downsample_ratio = _get_split_value(config, split, "downsample_ratio", 1)
+    if downsample_ratio is not None and downsample_ratio > 1:
+        transforms["(?<!flow_gt_)event_volume"] = lambda sample: downsample_spatial(
+            sample, downsample_ratio
+        )
+        transforms["flow_gt"] = lambda sample: [
+            downsample_spatial(sample[0], downsample_ratio) / downsample_ratio,
+            downsample_spatial_mask(sample[1], downsample_ratio),
+        ]
+    if _get_split_value(config, split, "horizontal_flip", None):
+        transforms["hflip"] = None
+    if _get_split_value(config, split, "vertical_flip", None):
+        transforms["vflip"] = _get_split_value(config, split, "vertical_flip")
+    random_crop = _get_split_value(config, split, "random_crop", None)
+    if random_crop:
+        transforms["randomcrop"] = random_crop
+    return transforms
+
+
+def _get_preprocessed_split_root(config, split):
+    if config is None or "common" not in config:
+        return None
+    preprocessed_root = config.common.get("preprocessed_root", None)
+    if preprocessed_root is None:
+        return None
+    return Path(preprocessed_root) / split
+
+
+def _format_cache_tag_value(value):
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
 class EVIMO2v2Sequence(Dataset):
-    def __init__(self, seq_path, config, split="eval", num_bins=None):
+    def __init__(self, seq_path, config, split="eval", num_bins=None, transforms=None):
         self.seq_path = Path(seq_path)
         self.config = config
         self.split = split
         self.seq_name = self.seq_path.name
+        self.transforms = transforms or dict()
 
-        self.num_bins = int(num_bins or config.get("num_voxel_bins", 15))
-        self.add_eigenvalues = config.get("add_eigenvalues", False)
-        self.add_filter_values = config.get("add_filter_values", False)
-        self.in_memory = config.get("in_memory", False)
-        self.force_preprocess = config.get("force_preprocess", False)
-        self.do_not_save_preprocessed = config.get("do_not_save_preprocessed", True)
-        self.normalize_voxel = config.get("normalize_voxel", True)
-        self.normalize_aux_voxel = config.get("normalize_aux_voxel", True)
-        self.skip_invalid = config.get("skip_invalid", True)
+        self.num_bins = int(num_bins or _get_split_value(config, split, "num_voxel_bins", 15))
+        self.add_eigenvalues = _get_split_value(config, split, "add_eigenvalues", False)
+        self.add_filter_values = _get_split_value(config, split, "add_filter_values", False)
+        self.in_memory = _get_split_value(config, split, "in_memory", False)
+        self.force_preprocess = _get_split_value(config, split, "force_preprocess", False)
+        self.do_not_save_preprocessed = _get_split_value(
+            config, split, "do_not_save_preprocessed", True
+        )
+        self.normalize_voxel = _get_split_value(config, split, "normalize_voxel", True)
+        self.normalize_aux_voxel = _get_split_value(config, split, "normalize_aux_voxel", True)
+        self.skip_invalid = _get_split_value(config, split, "skip_invalid", True)
 
-        self.image_width = int(config.get("image_width", 640))
-        self.image_height = int(config.get("image_height", 480))
+        self.image_width = int(_get_split_value(config, split, "image_width", 640))
+        self.image_height = int(_get_split_value(config, split, "image_height", 480))
 
+        if self.add_eigenvalues or self.add_filter_values:
+            self.tau = _get_split_value(config, split, "tau", 15_000)
+            self.filter_size = _get_split_value(config, split, "filter_size", 7)
+
+        self.preprocessed_path = self._build_preprocessed_path()
+        self.samples = self._build_cached_sample_index()
+        self.using_preprocessed_cache = bool(self.samples)
+
+        self.events_xy = None
+        self.events_t = None
+        self.events_p = None
+        self.flow_data = None
+        self.mask_data = None
+        self.voxel = None
+        self.voxel_aux = None
+        self.harris_recursive = None
+
+        if not self.using_preprocessed_cache:
+            self._open_data_files()
+            self.voxel = EventSequenceToVoxelGrid_Pytorch(
+                num_bins=self.num_bins,
+                normalize=self.normalize_voxel,
+                gpu=False,
+            )
+            self.voxel_aux = EventSequenceToVoxelGrid_Pytorch(
+                num_bins=self.num_bins,
+                normalize=self.normalize_aux_voxel,
+                gpu=False,
+            )
+            if self.add_eigenvalues or self.add_filter_values:
+                self.harris_recursive = HarrisRecursive(
+                    tau=self.tau,
+                    filter_size=self.filter_size,
+                    image_size=(self.image_height, self.image_width),
+                )
+            self.samples = self._build_sample_index()
+
+        if self.in_memory:
+            self.data = [self.get_data_sample(idx) for idx in range(len(self))]
+
+    def _open_data_files(self):
         self.events_xy = np.load(self.seq_path / "dataset_events_xy.npy", mmap_mode="r")
         self.events_t = np.load(self.seq_path / "dataset_events_t.npy", mmap_mode="r")
         self.events_p = np.load(self.seq_path / "dataset_events_p.npy", mmap_mode="r")
         self.flow_data = np.load(self.seq_path / "dataset_flow.npz")
         self.mask_data = np.load(self.seq_path / "dataset_mask.npz")
 
-        self.voxel = EventSequenceToVoxelGrid_Pytorch(
-            num_bins=self.num_bins,
-            normalize=self.normalize_voxel,
-            gpu=False,
-        )
-        self.voxel_aux = EventSequenceToVoxelGrid_Pytorch(
-            num_bins=self.num_bins,
-            normalize=self.normalize_aux_voxel,
-            gpu=False,
-        )
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        for key in ("events_xy", "events_t", "events_p", "flow_data", "mask_data"):
+            state[key] = None
+        return state
 
-        if self.add_eigenvalues or self.add_filter_values:
-            self.tau = config.get("tau", 15_000)
-            self.filter_size = config.get("filter_size", 7)
-            self.harris_recursive = HarrisRecursive(
-                tau=self.tau,
-                filter_size=self.filter_size,
-                image_size=(self.image_height, self.image_width),
-            )
-
-        self.samples = self._build_sample_index()
-        self.preprocessed_path = self._build_preprocessed_path()
-
-        if self.in_memory:
-            self.data = [self.get_data_sample(idx) for idx in range(len(self))]
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if not self.using_preprocessed_cache:
+            self._open_data_files()
 
     def _build_preprocessed_path(self):
         preprocessed_root = self.config.common.get("preprocessed_root", None)
@@ -70,11 +165,25 @@ class EVIMO2v2Sequence(Dataset):
             f"_filter{int(self.add_filter_values)}"
         )
         if self.add_eigenvalues or self.add_filter_values:
-            tag += f"_tau{self.tau}_fs{self.filter_size}"
-        path = Path(preprocessed_root) / self.split / self.seq_name / tag
-        if not self.do_not_save_preprocessed:
-            path.mkdir(parents=True, exist_ok=True)
-        return path
+            tag += (
+                f"_tau{_format_cache_tag_value(self.tau)}"
+                f"_fs{_format_cache_tag_value(self.filter_size)}"
+            )
+        return Path(preprocessed_root) / self.split / self.seq_name / tag
+
+    def _build_cached_sample_index(self):
+        if self.force_preprocess or self.do_not_save_preprocessed:
+            return []
+        if not self.preprocessed_path.exists():
+            return []
+        samples = []
+        for slot, path in enumerate(sorted(self.preprocessed_path.glob("*.pt"))):
+            try:
+                file_index = int(path.stem)
+            except ValueError:
+                continue
+            samples.append({"slot": slot, "file_index": file_index})
+        return samples
 
     def _build_sample_index(self):
         flow_keys = sorted(k for k in self.flow_data.files if k.startswith("flow_"))
@@ -118,8 +227,33 @@ class EVIMO2v2Sequence(Dataset):
 
     def __getitem__(self, idx):
         if self.in_memory:
-            return self.data[idx]
-        return self.get_data_sample(idx)
+            sample = self.data[idx]
+        else:
+            sample = self.get_data_sample(idx)
+
+        for key_t, transform in self.transforms.items():
+            if key_t == "hflip":
+                if random.random() > 0.5:
+                    for key in sample:
+                        if isinstance(sample[key], torch.Tensor):
+                            sample[key] = TF.hflip(sample[key])
+                        if key.startswith("flow_gt"):
+                            sample[key] = [TF.hflip(mask) for mask in sample[key]]
+                            sample[key][0][0, :] = -sample[key][0][0, :]
+            elif key_t == "vflip":
+                if random.random() < transform:
+                    for key in sample:
+                        if isinstance(sample[key], torch.Tensor):
+                            sample[key] = TF.vflip(sample[key])
+                        if key.startswith("flow_gt"):
+                            sample[key] = [TF.vflip(mask) for mask in sample[key]]
+                            sample[key][0][1, :] = -sample[key][0][1, :]
+            elif key_t == "randomcrop":
+                apply_randomcrop_to_sample(sample, crop_size=transform)
+            else:
+                apply_transform_to_field(sample, transform, key_t)
+
+        return sample
 
     def _preprocessed_file_path(self, sample):
         return self.preprocessed_path / f"{sample['file_index']:010d}.pt"
@@ -155,6 +289,7 @@ class EVIMO2v2Sequence(Dataset):
                 )
 
         if not self.do_not_save_preprocessed:
+            self.preprocessed_path.mkdir(parents=True, exist_ok=True)
             torch.save(output, preprocessed_file_path)
         return output
 
@@ -240,22 +375,46 @@ class EVIMO2v2Sequence(Dataset):
 def assemble_evimo_sequences(dataset_root, split="eval", include_seq=None, config=None, num_bins=None):
     dataset_root = Path(dataset_root)
     split_root = dataset_root / split
-    if not split_root.exists():
-        raise FileNotFoundError(f"EVIMO2v2 split directory does not exist: {split_root}")
+    preprocessed_split_root = _get_preprocessed_split_root(config, split)
 
-    available_seqs = sorted(
-        path.name for path in split_root.iterdir() if path.is_dir()
-    )
+    if split_root.exists():
+        available_seqs = sorted(
+            path.name for path in split_root.iterdir() if path.is_dir()
+        )
+    elif preprocessed_split_root is not None and preprocessed_split_root.exists():
+        available_seqs = sorted(
+            path.name for path in preprocessed_split_root.iterdir() if path.is_dir()
+        )
+    else:
+        locations = [str(split_root)]
+        if preprocessed_split_root is not None:
+            locations.append(str(preprocessed_split_root))
+        raise FileNotFoundError(
+            "EVIMO2v2 split directory does not exist in raw or preprocessed roots: "
+            + ", ".join(locations)
+        )
     if include_seq:
         include_seq = [include_seq] if isinstance(include_seq, str) else list(include_seq)
-        seqs = [seq for seq in available_seqs if seq in include_seq]
+        seqs = [seq for seq in include_seq if seq in available_seqs]
+        missing = sorted(set(include_seq) - set(seqs))
+        if missing:
+            raise ValueError(
+                f"Requested EVIMO2v2 sequences are not available for split '{split}': {missing}"
+            )
     else:
         seqs = available_seqs
     if not seqs:
         raise ValueError(f"No EVIMO2v2 sequences selected from {split_root}")
 
+    transforms = _build_transforms(config, split)
     return [
-        EVIMO2v2Sequence(split_root / seq, config=config, split=split, num_bins=num_bins)
+        EVIMO2v2Sequence(
+            split_root / seq,
+            config=config,
+            split=split,
+            num_bins=num_bins,
+            transforms=transforms,
+        )
         for seq in seqs
     ]
 

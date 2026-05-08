@@ -22,9 +22,23 @@ common:
 
 train:
   split: train
+  use_all_seqs: true
   seq: []
+  load_gt: true
+  downsample_ratio: 1
+  add_eigenvalues: ${dataset.add_eigenvalues}
+  add_filter_values: ${dataset.add_filter_values}
+  tau: ${dataset.tau}
+  filter_size: ${dataset.filter_size}
+  in_memory: ${dataset.in_memory}
+  force_preprocess: ${dataset.force_preprocess}
+  do_not_save_preprocessed: ${dataset.do_not_save_preprocessed}
+  normalize_voxel: ${dataset.normalize_voxel}
+  normalize_aux_voxel: ${dataset.normalize_aux_voxel}
+  skip_invalid: ${dataset.skip_invalid}
 
 val:
   split: eval
   seq: []
+  downsample_ratio: 1
   concat_seq: false

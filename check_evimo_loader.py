@@ -1,5 +1,5 @@
 import argparse
-from pathlib import Path
+import os
 
 from omegaconf import OmegaConf
 
@@ -32,6 +32,16 @@ def main():
     parser.add_argument("--add-filter-values", action="store_true")
     parser.add_argument("--tau", type=float, default=5000)
     parser.add_argument("--filter-size", type=int, default=5)
+    parser.add_argument(
+        "--preprocessed-root",
+        default=os.environ.get("EVIMO2V2_PREPROCESSED_ROOT", "data/EVIMO2v2/preprocessed"),
+        help="EVIMO2v2 preprocessed root containing train/ and eval/ splits.",
+    )
+    parser.add_argument(
+        "--use-preprocessed-cache",
+        action="store_true",
+        help="Load cached .pt samples from --preprocessed-root when available.",
+    )
     args = parser.parse_args()
 
     config = OmegaConf.create(
@@ -46,12 +56,13 @@ def main():
             "filter_size": args.filter_size,
             "in_memory": False,
             "force_preprocess": False,
-            "do_not_save_preprocessed": True,
+            "do_not_save_preprocessed": not args.use_preprocessed_cache,
             "normalize_voxel": True,
+            "normalize_aux_voxel": True,
             "skip_invalid": True,
             "common": {
                 "data_root": args.data_root,
-                "preprocessed_root": str(Path(args.data_root) / "preprocessed"),
+                "preprocessed_root": args.preprocessed_root,
             },
         }
     )

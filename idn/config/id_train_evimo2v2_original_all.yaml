@@ -1,0 +1,75 @@
+deterministic: false
+track: false
+num_epoch: 150
+
+data_loader:
+  common:
+    num_voxel_bins: 15
+  train:
+    gpu: 0
+    args:
+      batch_size: 5
+  val:
+    gpu: 0
+    batch_freq: 1500
+
+loss:
+  final_prediction_nonseq:
+    loss_type: sparse_l1
+    weight: 1.0
+    seq_weight: avg
+    seq_norm: false
+
+optim:
+  optimizer: adam
+  scheduler: onecycle
+  lr: 1e-4
+
+callbacks:
+  logger:
+    enable:
+    log_keys:
+      batch_end:
+        - loss
+        - lr
+  validator:
+    enable:
+    frequency_type: step
+    frequency: 500
+    sanity_run_step: 3
+
+model:
+  pretrain_ckpt: null
+  add_eigenvalues: ${dataset.train.add_eigenvalues}
+  add_filter_values: ${dataset.train.add_filter_values}
+  num_voxel_bins: ${data_loader.common.num_voxel_bins}
+
+dataset:
+  add_eigenvalues: false
+  add_filter_values: false
+  tau: 1000
+  filter_size: 5
+  force_preprocess: false
+  do_not_save_preprocessed: false
+  val:
+    seq: []
+
+torch:
+  debug_grad: false
+  deterministic: false
+
+resume_ckpt: ${model.pretrain_ckpt}
+
+wandb:
+  enabled: true
+  project: "idnet_evimo2v2"
+  run_name: "-evimo2v2-all-id-8x-baseline-1mS-5x5-batch-5-epoch-150"
+
+defaults:
+  - validation@_group_.evimo2v2: evimo2v2
+  - hydra: custom_hydra
+  - data_loader_base
+  - torch_environ_base
+  - model: id-8x
+  - dataset: evimo2v2_augmentation
+  - _self_
