@@ -1,6 +1,44 @@
 from omegaconf import OmegaConf
 import hydra
+import sys
 from .utils.trainer import Trainer
+
+
+def cli_overrides_without_hydra_flags():
+    hydra_flags_with_values = {
+        "--config-name",
+        "--config-path",
+        "--config-dir",
+        "--cfg",
+        "--package",
+    }
+    hydra_flags_without_values = {
+        "--run",
+        "--multirun",
+        "-m",
+        "--help",
+        "-h",
+        "--info",
+    }
+    overrides = []
+    skip_next = False
+    for arg in sys.argv[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        flag = arg.split("=", 1)[0]
+        if flag in hydra_flags_with_values:
+            skip_next = "=" not in arg
+            continue
+        if flag in hydra_flags_without_values:
+            continue
+        if arg.startswith("+"):
+            continue
+        if arg.startswith("-"):
+            continue
+        overrides.append(arg)
+    return OmegaConf.from_cli(overrides)
+
 
 # @hydra.main(config_path="config", config_name="mvsec_train")
 # @hydra.main(config_path="config", config_name="tid_train")
@@ -8,7 +46,7 @@ from .utils.trainer import Trainer
 
 def main(config):
     
-    cmd_cfg = OmegaConf.from_cli()
+    cmd_cfg = cli_overrides_without_hydra_flags()
     config = OmegaConf.merge(config, cmd_cfg)
     
     if config.get("resume_ckpt", None):
