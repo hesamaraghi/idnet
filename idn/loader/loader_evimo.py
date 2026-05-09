@@ -425,11 +425,13 @@ def assemble_evimo_sequences(dataset_root, split="eval", include_seq=None, confi
     split_root = dataset_root / split
     preprocessed_split_root = _get_preprocessed_split_root(config, split)
 
+    use_preprocessed_split_root = False
     if split_root.exists():
         available_seqs = sorted(
             path.name for path in split_root.iterdir() if path.is_dir()
         )
     elif preprocessed_split_root is not None and preprocessed_split_root.exists():
+        use_preprocessed_split_root = True
         available_seqs = sorted(
             path.name for path in preprocessed_split_root.iterdir() if path.is_dir()
         )
@@ -455,9 +457,10 @@ def assemble_evimo_sequences(dataset_root, split="eval", include_seq=None, confi
         raise ValueError(f"No EVIMO2v2 sequences selected from {split_root}")
 
     transforms = _build_transforms(config, split)
+    sequence_root = preprocessed_split_root if use_preprocessed_split_root else split_root
     return [
         EVIMO2v2Sequence(
-            split_root / seq,
+            sequence_root / seq,
             config=config,
             split=split,
             num_bins=num_bins,
