@@ -1,0 +1,16 @@
+# Public-safe EVIMO2v2 full-train no-crop example.
+# Adjust dataset paths to match your local EVIMO2v2 installation/cache.
+
+pixi run python -m idn.train \
+  --config-name id_train_evimo2v2_eigen_subset \
+  dataset.common.data_root=data/EVIMO2v2/samsung_mono/imo \
+  dataset.common.preprocessed_root=data/EVIMO2v2/preprocessed \
+  dataset.add_eigenvalues=true \
+  dataset.add_filter_values=true \
+  dataset.train.random_crop=null \
+  'dataset.train.seq=[scene10_dyn_train_00_000000,scene10_dyn_train_02_000000,scene12_dyn_test_01_000000,scene14_dyn_test_01_000000,scene15_dyn_test_03_000000,scene6_dyn_train_03_000000,scene9_dyn_train_01_000000,scene9_dyn_train_06_000000]' \
+  dataset.val.split=train \
+  'dataset.val.seq=[scene15_dyn_test_04_000000]' \
+  dataset.val.concat_seq=false \
+  wandb.project=idnet_evimo2v2 \
+  wandb.run_name=evimo2v2-train8-val_scene15_04-fullres-eigfilter
