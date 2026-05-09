@@ -86,6 +86,8 @@ class EVIMO2v2Sequence(Dataset):
         self.num_bins = int(num_bins or _get_split_value(config, split, "num_voxel_bins", 15))
         self.add_eigenvalues = _get_split_value(config, split, "add_eigenvalues", False)
         self.add_filter_values = _get_split_value(config, split, "add_filter_values", False)
+        self.tau = _get_split_value(config, split, "tau", 15_000)
+        self.filter_size = _get_split_value(config, split, "filter_size", 7)
         self.in_memory = _get_split_value(config, split, "in_memory", False)
         self.force_preprocess = _get_split_value(config, split, "force_preprocess", False)
         self.do_not_save_preprocessed = _get_split_value(
@@ -97,10 +99,6 @@ class EVIMO2v2Sequence(Dataset):
 
         self.image_width = int(_get_split_value(config, split, "image_width", 640))
         self.image_height = int(_get_split_value(config, split, "image_height", 480))
-
-        if self.add_eigenvalues or self.add_filter_values:
-            self.tau = _get_split_value(config, split, "tau", 15_000)
-            self.filter_size = _get_split_value(config, split, "filter_size", 7)
 
         self.preprocessed_path = self._build_preprocessed_path()
         self.samples = self._build_cached_sample_index()
@@ -156,34 +154,78 @@ class EVIMO2v2Sequence(Dataset):
         if not self.using_preprocessed_cache:
             self._open_data_files()
 
-    def _build_preprocessed_path(self):
-        preprocessed_root = self.config.common.get("preprocessed_root", None)
-        if preprocessed_root is None:
-            preprocessed_root = Path(self.config.common.data_root) / "preprocessed"
+    def _preprocessed_tag(self, add_eigenvalues, add_filter_values):
+        add_eigenvalues = bool(add_eigenvalues)
+        add_filter_values = bool(add_filter_values)
         tag = (
-            f"bins{self.num_bins}_eig{int(self.add_eigenvalues)}"
-            f"_filter{int(self.add_filter_values)}"
+            f"bins{self.num_bins}_eig{int(add_eigenvalues)}"
+            f"_filter{int(add_filter_values)}"
         )
-        if self.add_eigenvalues or self.add_filter_values:
+        if add_eigenvalues or add_filter_values:
             tag += (
                 f"_tau{_format_cache_tag_value(self.tau)}"
                 f"_fs{_format_cache_tag_value(self.filter_size)}"
             )
+        return tag
+
+    def _build_preprocessed_path(self, add_eigenvalues=None, add_filter_values=None):
+        preprocessed_root = self.config.common.get("preprocessed_root", None)
+        if preprocessed_root is None:
+            preprocessed_root = Path(self.config.common.data_root) / "preprocessed"
+        if add_eigenvalues is None:
+            add_eigenvalues = self.add_eigenvalues
+        if add_filter_values is None:
+            add_filter_values = self.add_filter_values
+        tag = self._preprocessed_tag(add_eigenvalues, add_filter_values)
         return Path(preprocessed_root) / self.split / self.seq_name / tag
+
+    def _candidate_preprocessed_paths(self):
+        paths = [self._build_preprocessed_path()]
+        rich_cache_path = self._build_preprocessed_path(
+            add_eigenvalues=True,
+            add_filter_values=True,
+        )
+        if rich_cache_path not in paths:
+            paths.append(rich_cache_path)
+        return paths
 
     def _build_cached_sample_index(self):
         if self.force_preprocess or self.do_not_save_preprocessed:
             return []
-        if not self.preprocessed_path.exists():
-            return []
-        samples = []
-        for slot, path in enumerate(sorted(self.preprocessed_path.glob("*.pt"))):
-            try:
-                file_index = int(path.stem)
-            except ValueError:
+        requested_preprocessed_path = self.preprocessed_path
+        for preprocessed_path in self._candidate_preprocessed_paths():
+            if not preprocessed_path.exists():
                 continue
-            samples.append({"slot": slot, "file_index": file_index})
-        return samples
+            samples = []
+            for slot, path in enumerate(sorted(preprocessed_path.glob("*.pt"))):
+                try:
+                    file_index = int(path.stem)
+                except ValueError:
+                    continue
+                samples.append({"slot": slot, "file_index": file_index})
+            if samples:
+                self.preprocessed_path = preprocessed_path
+                return samples
+        self.preprocessed_path = requested_preprocessed_path
+        return []
+
+    def _adapt_cached_sample(self, sample, path):
+        if self.add_eigenvalues and "eigenvalues_volume_new" not in sample:
+            raise KeyError(f"Missing eigenvalues_volume_new in preprocessed sample {path}")
+        if self.add_filter_values and "filter_values_volume_new" not in sample:
+            raise KeyError(f"Missing filter_values_volume_new in preprocessed sample {path}")
+
+        if not self.add_eigenvalues:
+            sample.pop("eigenvalues_volume_new", None)
+            sample.pop("eigenvalues_volume_old", None)
+        if not self.add_filter_values:
+            sample.pop("filter_values_volume_new", None)
+            sample.pop("filter_values_volume_old", None)
+        if not self.add_eigenvalues and not self.add_filter_values:
+            event_volume = sample.get("event_volume_new", None)
+            if torch.is_tensor(event_volume) and event_volume.shape[0] > self.num_bins:
+                sample["event_volume_new"] = event_volume[: self.num_bins, :, :]
+        return sample
 
     def _build_sample_index(self):
         flow_keys = sorted(k for k in self.flow_data.files if k.startswith("flow_"))
@@ -266,7 +308,13 @@ class EVIMO2v2Sequence(Dataset):
             and not self.do_not_save_preprocessed
             and preprocessed_file_path.exists()
         ):
-            return torch.load(preprocessed_file_path, weights_only=False)
+            try:
+                loaded_file = torch.load(preprocessed_file_path, weights_only=False)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to load EVIMO2v2 preprocessed sample: {preprocessed_file_path}"
+                ) from exc
+            return self._adapt_cached_sample(loaded_file, preprocessed_file_path)
 
         events = self._load_events(sample_info["t_start"], sample_info["t_end"])
         output = {

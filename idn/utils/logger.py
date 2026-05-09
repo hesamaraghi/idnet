@@ -126,6 +126,8 @@ class Logger:
                 self.config, os.path.join(log_path, seq_name), seq_name)
             yield self.seq_logger
         finally:
+            if not hasattr(self.seq_logger, "results"):
+                return
             self.seq_logger.compute_statistics()
             self.copy_metrics(self.seq_logger.results, self.seq_logger.metric_stats,
                               seq_name)
@@ -167,4 +169,3 @@ class Logger:
                         summary_flat['-'.join([seq_name,
                                               quantity, metric, stat])] = value
         return summary
-

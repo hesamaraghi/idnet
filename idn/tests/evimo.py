@@ -1,4 +1,4 @@
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 
 from .test import Test
 from ..loader.loader_dsec import train_collate
@@ -20,6 +20,12 @@ class TestEVIMO2V2(Test):
         assert self.spec.data_loader.args.shuffle is False, (
             "shuffle must be false for val run."
         )
+        if self.spec.dataset.val.get("concat_seq", False):
+            valid_set = ConcatDataset(valid_set)
+            valid_set.seq_name = self.spec.name
+            return DataLoader(
+                valid_set, collate_fn=train_collate, **self.spec.data_loader.args
+            )
         return [
             DataLoader(seq, collate_fn=train_collate, **self.spec.data_loader.args)
             for seq in valid_set

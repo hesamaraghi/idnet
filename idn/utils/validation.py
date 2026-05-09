@@ -50,7 +50,13 @@ class Validator:
         # run the corresponding validator
         results = dict()
         for name, test in self.test.items():
-            state, results[name] = test.execute_test(model)
+            state, result = test.execute_test(model)
+            if state != 0:
+                message = f"Validation '{name}' failed"
+                if isinstance(state, Exception):
+                    raise RuntimeError(message) from state
+                raise RuntimeError(f"{message}: {state}")
+            results[name] = result
         return results
 
 

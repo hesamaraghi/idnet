@@ -36,7 +36,7 @@ callbacks:
     enable:
     frequency_type: step
     frequency: 500
-    sanity_run_step: 3
+    sanity_run_step: null
 
 model:
   pretrain_ckpt: null
@@ -53,6 +53,7 @@ dataset:
   do_not_save_preprocessed: false
   val:
     seq: []
+    concat_seq: true
 
 torch:
   debug_grad: false
