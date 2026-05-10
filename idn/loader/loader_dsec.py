@@ -228,6 +228,8 @@ class HarrisRecursive:
         )
 
         self.filter_value_recursive = np.zeros(data.shape[0], dtype=np.float32)
+        self.grad_x = np.zeros(data.shape[0], dtype=np.float32)
+        self.grad_y = np.zeros(data.shape[0], dtype=np.float32)
         self.temporal_accumulation_tensor_list = []
         self.structure_tensor = np.zeros((3, data.shape[0]), dtype=np.float32)
 
@@ -311,6 +313,9 @@ class HarrisRecursive:
             self.structure_tensor[2, i] = np.sum(
                 self.w_diff_tensor * self.h_diff_tensor * self.gaussian_kernel
             )
+
+            self.grad_x[i] = self.w_diff_tensor[self.K, self.K]
+            self.grad_y[i] = self.h_diff_tensor[self.K, self.K]
 
             self.filter_value_recursive[i] = np.sum(
                 self.temporal_accumulation_tensor[
