@@ -342,8 +342,11 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         eig1 = harris_rec.eig1
         eig2 = harris_rec.eig2
         filter_values = harris_rec.filter_value_recursive
+        grad_x = harris_rec.grad_x
+        grad_y = harris_rec.grad_y
         data["eig"] = torch.tensor(np.array([eig1, eig2])).T
         data["filter"] = torch.tensor(filter_values).unsqueeze(1)
+        data["grad"] = torch.tensor(np.array([grad_x, grad_y])).T
 
         torch.save(data, dataset_path)
         print(f"💾 Dataset cached at {dataset_path}")
@@ -390,6 +393,20 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
                 print(f"⚠️  Could not create animation: {e}")
         else:
             print(f"🎞️  Animation already exists at {animation_path}")
+
+    if args.feature_type in ("grad", "grad_filter") and "grad" not in data:
+        print("🔹 Cached dataset has no gradient features; recomputing Harris gradients")
+        data_array_for_harris = pyg2numpy_event_convertor(data)
+        tau_us = args.tau * frame_time_us
+        harris_rec = HarrisRecursive(
+            tau=tau_us, filter_size=args.filter_size, image_size=args.img_size
+        )
+        harris_rec(data_array_for_harris)
+        data["eig"] = torch.tensor(np.array([harris_rec.eig1, harris_rec.eig2])).T
+        data["filter"] = torch.tensor(harris_rec.filter_value_recursive).unsqueeze(1)
+        data["grad"] = torch.tensor(np.array([harris_rec.grad_x, harris_rec.grad_y])).T
+        torch.save(data, dataset_path)
+        print(f"💾 Cached dataset updated with gradient features at {dataset_path}")
 
     # -------------------------------
     # 3. Cache KNN index as well
@@ -448,6 +465,10 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         features = torch.cat([data.pos[:, 0:2], data["filter"]], dim=1)
     elif args.feature_type == "both":
         features = torch.cat([data.pos[:, 0:2], data["eig"], data["filter"]], dim=1)
+    elif args.feature_type == "grad":
+        features = torch.cat([data.pos[:, 0:2], data["grad"]], dim=1)
+    elif args.feature_type == "grad_filter":
+        features = torch.cat([data.pos[:, 0:2], data["grad"], data["filter"]], dim=1)
     elif args.feature_type == "both_time_augmented":
         features = torch.cat(
             [
@@ -488,6 +509,10 @@ def create_toy_dataset(args, cache_dir="dataset_cache"):
         elif args.feature_type == "filter":
             relative_feat_indices = [0, 1]
         elif args.feature_type == "both":
+            relative_feat_indices = [0, 1]
+        elif args.feature_type == "grad":
+            relative_feat_indices = [0, 1]
+        elif args.feature_type == "grad_filter":
             relative_feat_indices = [0, 1]
         elif args.feature_type == "both_time_augmented":
             relative_feat_indices = [0, 1, 2]
@@ -1085,7 +1110,7 @@ if __name__ == "__main__":
         "--feature_type",
         type=str,
         default="both",
-        help="Type of node features from: original / eig / filter / both / original_random_augmented / original_repeated_augmented / eig_exclude_xy / filter_exclude_xy / both_exclude_xy",
+        help="Type of node features from: original / eig / filter / both / grad / grad_filter / original_random_augmented / original_repeated_augmented / eig_exclude_xy / filter_exclude_xy / both_exclude_xy",
     )
     parser.add_argument(
         "--tau", type=float, default=1.0, help="Temoral constant for filter features"
